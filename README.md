@@ -70,6 +70,47 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Test from iPhone (no Mac or PC)
+
+This project is a Python CLI, not a native iOS app. To run it from a phone browser, use a **cloud dev environment** — the code runs on a remote machine; your phone is the screen and keyboard.
+
+### Option A: GitHub Codespaces (Safari on iPhone)
+
+1. Open **https://github.com/cai40/stock-trader** in Safari.
+2. Sign in to GitHub.
+3. Tap **Code** → **Codespaces** → **Create codespace on main**.
+4. Wait for the browser IDE to load (setup runs automatically).
+5. Open the **Terminal** panel and run:
+
+```bash
+python3 -m pytest
+python3 -m stock_trader.cli strategies
+python3 -m stock_trader.cli quote AAPL
+python3 -m stock_trader.cli backtest AAPL --start 2023-01-01 --end 2024-01-01
+```
+
+> **Note:** Codespaces requires a GitHub account. Free tier includes limited monthly hours.
+
+### Option B: Cursor web (you are here)
+
+If you opened this repo in **cursor.com/agents** or the Cursor web app:
+
+1. Open the **terminal** in the web UI.
+2. Run the one-time setup:
+
+```bash
+bash scripts/setup.sh
+```
+
+3. Then run any command:
+
+```bash
+python3 -m pytest
+python3 -m stock_trader.cli quote AAPL
+```
+
+Cloud Agents can also run these commands for you — just ask in the agent chat.
+
 ## Disclaimer
 
 Stock Trader is for **educational and research purposes only**. It does not connect to live brokerages and is not financial advice. Past backtest performance does not guarantee future results.
