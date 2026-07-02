@@ -8,6 +8,7 @@ from stock_trader.backtest import BacktestEngine
 from stock_trader.market_data import YFinanceMarketData
 from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResult, Trade
 from stock_trader.strategies import get_strategy, list_strategies
+from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -53,6 +54,38 @@ def configure_page() -> None:
 def render_header() -> None:
     st.title("📈 Stock Trader")
     st.caption("Paper trading & backtesting — educational use only")
+
+
+def resolve_symbol(
+    selection: str,
+    custom_key: str,
+    *,
+    default_symbol: str = "AAPL",
+) -> str:
+    if selection == CUSTOM_OPTION:
+        return st.text_input(
+            "Enter ticker",
+            value=default_symbol,
+            key=custom_key,
+        ).upper().strip()
+    symbol = label_to_symbol(selection)
+    return symbol or default_symbol
+
+
+def resolve_symbols_multiselect(selection_key: str) -> list[str]:
+    default_labels = [
+        label
+        for label in watchlist_labels()
+        if label.startswith(("VGT", "SPY", "AAPL"))
+    ]
+    selected_labels = st.multiselect(
+        "Stocks & ETFs",
+        options=watchlist_labels(),
+        default=default_labels,
+        key=selection_key,
+        help="VGT = tech ETF, SPY = S&P 500 ETF, TE = TECO Energy",
+    )
+    return [label_to_symbol(label) or label.split(" — ")[0] for label in selected_labels]
 
 
 def trades_dataframe(trades: list[Trade]) -> pd.DataFrame:
@@ -139,7 +172,13 @@ def price_chart(symbol: str, start: str, end: str, trades: list[Trade]) -> None:
 
 def tab_quote() -> None:
     st.subheader("Live quote")
-    symbol = st.text_input("Symbol", value="AAPL", placeholder="e.g. AAPL").upper().strip()
+    selection = st.selectbox(
+        "Stock / ETF",
+        options=watchlist_select_options(),
+        index=0,
+        key="quote_pick",
+    )
+    symbol = resolve_symbol(selection, "quote_custom", default_symbol="VGT")
 
     if st.button("Get quote", type="primary", use_container_width=True):
         if not symbol:
@@ -167,7 +206,13 @@ def tab_quote() -> None:
 
 def tab_backtest() -> None:
     st.subheader("Backtest")
-    symbol = st.text_input("Symbol", value="AAPL", key="bt_symbol").upper().strip()
+    selection = st.selectbox(
+        "Stock / ETF",
+        options=watchlist_select_options(),
+        index=0,
+        key="bt_pick",
+    )
+    symbol = resolve_symbol(selection, "bt_custom", default_symbol="VGT")
     col1, col2 = st.columns(2)
     start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"))
     end = col2.date_input("End", value=pd.Timestamp("2024-01-01"))
@@ -205,8 +250,7 @@ def tab_backtest() -> None:
 def tab_paper_trade() -> None:
     st.subheader("Paper trade")
     st.caption("Shared portfolio — one cash pool across all symbols")
-    symbols_raw = st.text_input("Symbols (comma-separated)", value="AAPL, MSFT")
-    symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
+    symbols = resolve_symbols_multiselect("pt_symbols")
     col1, col2 = st.columns(2)
     start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"), key="pt_start")
     end = col2.date_input("End", value=pd.Timestamp("2024-01-01"), key="pt_end")
@@ -215,7 +259,7 @@ def tab_paper_trade() -> None:
 
     if st.button("Run paper trade", type="primary", use_container_width=True):
         if not symbols:
-            st.error("Enter at least one symbol.")
+            st.error("Select at least one stock or ETF.")
             return
         if start >= end:
             st.error("End date must be after start date.")
