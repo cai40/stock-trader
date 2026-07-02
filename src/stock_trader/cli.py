@@ -5,7 +5,7 @@ import sys
 
 from stock_trader.backtest import BacktestEngine
 from stock_trader.market_data import YFinanceMarketData
-from stock_trader.strategies import get_strategy
+from stock_trader.strategies import get_strategy, list_strategies
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -17,6 +17,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     quote_parser = subparsers.add_parser("quote", help="Fetch the latest quote for a symbol")
     quote_parser.add_argument("symbol", help="Ticker symbol, e.g. AAPL")
+
+    strategies_parser = subparsers.add_parser("strategies", help="List available strategies")
+    strategies_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show strategy class names",
+    )
 
     backtest_parser = subparsers.add_parser("backtest", help="Run a historical backtest")
     backtest_parser.add_argument("symbol", help="Ticker symbol, e.g. AAPL")
@@ -36,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     paper_parser = subparsers.add_parser(
         "paper-trade",
-        help="Run a paper-trade backtest across multiple symbols",
+        help="Run a paper-trade simulation with a shared portfolio",
     )
     paper_parser.add_argument("symbols", nargs="+", help="Ticker symbols")
     paper_parser.add_argument("--start", default="2023-01-01", help="Start date (YYYY-MM-DD)")
@@ -50,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cash",
         type=float,
         default=10_000.0,
-        help="Starting cash per symbol (default: 10000)",
+        help="Starting cash for the shared portfolio (default: 10000)",
     )
 
     return parser
@@ -61,6 +68,34 @@ def cmd_quote(symbol: str) -> int:
     quote = market_data.get_quote(symbol)
     print(f"{quote.symbol}: ${quote.price:,.2f} @ {quote.timestamp.isoformat()}")
     return 0
+
+
+def cmd_strategies(verbose: bool) -> int:
+    from stock_trader.strategies import STRATEGIES
+
+    for name in list_strategies():
+        if verbose:
+            print(f"{name:16}  {STRATEGIES[name].__name__}")
+        else:
+            print(name)
+    return 0
+
+
+def _print_result_summary(
+    *,
+    start_cash: float,
+    end_equity: float,
+    total_return: float,
+    trade_count: int,
+    max_drawdown: float,
+    win_rate: float,
+) -> None:
+    print(f"Start cash:   ${start_cash:,.2f}")
+    print(f"End equity:   ${end_equity:,.2f}")
+    print(f"Total return: {total_return * 100:,.2f}%")
+    print(f"Max drawdown: {max_drawdown * 100:,.2f}%")
+    print(f"Win rate:     {win_rate * 100:,.1f}%")
+    print(f"Trades:       {trade_count}")
 
 
 def cmd_backtest(
@@ -78,10 +113,14 @@ def cmd_backtest(
     print(f"Symbol:       {result.symbol}")
     print(f"Strategy:     {result.strategy_name}")
     print(f"Period:       {start} to {end}")
-    print(f"Start cash:   ${result.start_cash:,.2f}")
-    print(f"End equity:   ${result.end_equity:,.2f}")
-    print(f"Total return: {result.total_return * 100:,.2f}%")
-    print(f"Trades:       {result.trade_count}")
+    _print_result_summary(
+        start_cash=result.start_cash,
+        end_equity=result.end_equity,
+        total_return=result.total_return,
+        trade_count=result.trade_count,
+        max_drawdown=result.max_drawdown,
+        win_rate=result.win_rate,
+    )
     return 0
 
 
@@ -95,19 +134,19 @@ def cmd_paper_trade(
     market_data = YFinanceMarketData()
     strategy = get_strategy(strategy_name)
     engine = BacktestEngine(market_data)
+    result = engine.run_portfolio(symbols, strategy, start=start, end=end, initial_cash=cash)
 
     print(f"Paper trading simulation ({strategy_name})")
-    print(f"Period: {start} to {end}\n")
-
-    for symbol in symbols:
-        result = engine.run(symbol, strategy, start=start, end=end, initial_cash=cash)
-        print(
-            f"{result.symbol:6}  "
-            f"equity=${result.end_equity:>10,.2f}  "
-            f"return={result.total_return * 100:>7.2f}%  "
-            f"trades={result.trade_count}"
-        )
-
+    print(f"Symbols:  {', '.join(result.symbols)}")
+    print(f"Period:   {start} to {end}\n")
+    _print_result_summary(
+        start_cash=result.start_cash,
+        end_equity=result.end_equity,
+        total_return=result.total_return,
+        trade_count=result.trade_count,
+        max_drawdown=result.max_drawdown,
+        win_rate=result.win_rate,
+    )
     return 0
 
 
@@ -118,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "quote":
             return cmd_quote(args.symbol)
+        if args.command == "strategies":
+            return cmd_strategies(args.verbose)
         if args.command == "backtest":
             return cmd_backtest(args.symbol, args.start, args.end, args.strategy, args.cash)
         if args.command == "paper-trade":
