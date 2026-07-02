@@ -17,9 +17,14 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+ui = [
+    "streamlit>=1.32",
+    "plotly>=5.20",
+]
 
 [project.scripts]
 stock-trader = "stock_trader.cli:main"
+stock-trader-ui = "stock_trader.ui_launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

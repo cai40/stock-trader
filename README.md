@@ -9,6 +9,7 @@ Standalone Python project for **paper trading**, **market data**, and **strategy
 - Pluggable strategies (moving-average crossover and RSI included)
 - Backtesting engine with performance summary (return, drawdown, win rate)
 - CLI for quotes, backtests, paper-trade simulation, and strategy listing
+- **Web UI** (Streamlit) for mobile-friendly browser access
 
 ## Quick start
 
@@ -44,6 +45,19 @@ stock-trader paper-trade AAPL MSFT --cash 10000 --strategy sma_crossover
 ```
 
 Paper trading uses a **shared portfolio** — one cash pool across all symbols.
+
+### Web UI (browser app)
+
+Install UI dependencies and launch the app:
+
+```bash
+pip install -e ".[ui]"
+python3 -m streamlit run src/stock_trader/ui.py --server.address 0.0.0.0 --server.port 8501
+```
+
+Open the URL shown in the terminal (port **8501**). Works on iPhone Safari when the server is reachable (Cursor web, Codespaces, etc.).
+
+Tabs: **Quote** · **Backtest** · **Paper trade**
 
 ## Project layout
 

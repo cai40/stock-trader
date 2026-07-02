@@ -26,6 +26,7 @@ python3 -m pytest
 | Backtest | `python3 -m stock_trader.cli backtest AAPL --start 2023-01-01 --end 2024-01-01` |
 | Paper trade | `python3 -m stock_trader.cli paper-trade AAPL MSFT --cash 10000` |
 | List strategies | `python3 -m stock_trader.cli strategies` |
+| **Web UI** | `python3 -m streamlit run src/stock_trader/ui.py --server.address 0.0.0.0 --server.port 8501` |
 
 No secrets or API keys are required — `yfinance` is unauthenticated.
 
