@@ -12,7 +12,7 @@ class WatchlistItem:
 WATCHLIST: tuple[WatchlistItem, ...] = (
     WatchlistItem("VGT", "VGT — Vanguard Info Tech ETF"),
     WatchlistItem("SPY", "SPY — S&P 500 ETF"),
-    WatchlistItem("TE", "TE — TECO Energy"),
+    WatchlistItem("TEL", "TEL — TE Connectivity"),
     WatchlistItem("AAPL", "AAPL — Apple"),
     WatchlistItem("MSFT", "MSFT — Microsoft"),
     WatchlistItem("NVDA", "NVDA — NVIDIA"),

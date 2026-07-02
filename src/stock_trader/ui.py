@@ -83,7 +83,7 @@ def resolve_symbols_multiselect(selection_key: str) -> list[str]:
         options=watchlist_labels(),
         default=default_labels,
         key=selection_key,
-        help="VGT = tech ETF, SPY = S&P 500 ETF, TE = TECO Energy",
+        help="VGT = tech ETF, SPY = S&P 500 ETF, TEL = TE Connectivity",
     )
     return [label_to_symbol(label) or label.split(" — ")[0] for label in selected_labels]
 

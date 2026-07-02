@@ -60,7 +60,7 @@ def test_watchlist_includes_requested_symbols() -> None:
     symbols = {label_to_symbol(label) for label in labels}
     assert "VGT" in symbols
     assert "SPY" in symbols
-    assert "TE" in symbols
+    assert "TEL" in symbols
 
 
 def test_portfolio_buy_and_sell_updates_cash_and_position() -> None:
