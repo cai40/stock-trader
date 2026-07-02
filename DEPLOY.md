@@ -1,40 +1,58 @@
 # Deploy Stock Trader UI
 
-Your code is on `main` and ready to deploy. Pick one option:
+Your code is on `main` and ready to deploy.
+
+## "You do not have access to this app"
+
+This means the old app (`cai40.streamlit.app`) was created under a **different Streamlit account** (e.g. the Cursor agent), not your `cai40@yahoo.com` login. You cannot reboot or manage it.
+
+**Fix: deploy a fresh app under your account** (steps below). Do not try to open the old URL.
+
+---
 
 ## Option 1: Streamlit Community Cloud (recommended, free)
 
-**If the app shows a text box instead of a dropdown**, it is on an old build. On your phone:
+On your iPhone in **Safari**:
 
-1. Open your app (`cai40.streamlit.app`)
-2. Tap **Manage app** (bottom-right)
-3. Tap **Reboot app**
-4. Wait ~2 minutes, then refresh — you should see **v0.2.3** and **📋 Pick a stock / ETF**
+1. Open this link (signed into GitHub as **cai40**):
 
-**First-time deploy** — open in Safari while signed into GitHub:
+   **https://share.streamlit.io/deploy?repository=cai40/stock-trader&branch=main&mainModule=streamlit_app.py**
 
-**https://share.streamlit.io/deploy?repository=cai40/stock-trader&branch=main&mainModule=streamlit_app.py&subdomain=cai40**
+2. Sign in with **GitHub** (`cai40`) if asked — use the same account that owns the repo
+3. Pick a subdomain, e.g. `stock-trader-cai40` (avoid `cai40` if it is taken by the old app)
+4. Tap **Deploy**
+5. Wait 2–3 minutes
 
-1. Sign in with GitHub if prompted
-2. Tap **Deploy**
-3. Wait ~2 minutes for the build
-4. Your URL: **https://cai40.streamlit.app**
+Your new URL will look like: **https://stock-trader-cai40.streamlit.app**
 
-## Option 2: Render (free tier)
+You should see **v0.2.3** and **📋 Pick a stock / ETF** dropdown (VGT, SPY, TEL, etc.).
+
+---
+
+## Option 2: Render (free tier, good backup)
 
 **https://dashboard.render.com/blueprint/new?repo=https://github.com/cai40/stock-trader**
 
-1. Sign in with GitHub
-2. Tap **Apply** to create the service
-3. Wait for deploy (~3 min)
+1. Sign in with **GitHub** (`cai40`)
+2. Tap **Apply**
+3. Wait ~3 minutes
 4. Open the `.onrender.com` URL Render gives you
 
-## Option 3: Temporary link (cloud agent session)
+---
 
-From a Cursor cloud terminal:
+## Option 3: Temporary link (works now, expires later)
 
-```bash
-bash scripts/start-ui.sh
-```
+**http://bore.pub:15196**
 
-Prints a temporary `http://bore.pub:PORT` link (expires when the session ends).
+Works while the cloud agent session is active. Includes the stock dropdown.
+
+---
+
+## Streamlit settings (for Option 1)
+
+| Setting | Value |
+|---------|-------|
+| Repository | `cai40/stock-trader` |
+| Branch | `main` |
+| Main file | `streamlit_app.py` |
+| Python | 3.12 |
