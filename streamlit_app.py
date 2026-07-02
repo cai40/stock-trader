@@ -1,4 +1,4 @@
-"""Streamlit Community Cloud entry point."""
+"""Streamlit Community Cloud entry point — v0.2.1"""
 
 import sys
 from pathlib import Path

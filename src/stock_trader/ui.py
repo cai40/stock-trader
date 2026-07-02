@@ -10,6 +10,8 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
+APP_VERSION = "0.2.1"
+
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
 
@@ -25,6 +27,13 @@ PAGE_CSS = """
     }
     .quote-price { font-size: 2.4rem; font-weight: 700; color: #4ade80; line-height: 1.1; }
     .quote-symbol { font-size: 1rem; color: #94a3b8; letter-spacing: 0.08em; }
+    .picker-box {
+        background: #1a1f2e;
+        border: 1px solid #4ade80;
+        border-radius: 12px;
+        padding: 0.75rem 1rem 0.25rem 1rem;
+        margin: 0.75rem 0 1rem 0;
+    }
     div[data-testid="stMetric"] {
         background: #1a1f2e;
         border: 1px solid #2d3548;
@@ -53,38 +62,54 @@ def configure_page() -> None:
 
 def render_header() -> None:
     st.title("📈 Stock Trader")
-    st.caption("Paper trading & backtesting — educational use only")
+    st.caption(f"Paper trading & backtesting · v{APP_VERSION}")
 
 
-def resolve_symbol(
-    selection: str,
-    custom_key: str,
-    *,
-    default_symbol: str = "AAPL",
-) -> str:
+def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
+    options = watchlist_select_options()
+    default_index = next(
+        (i for i, opt in enumerate(options) if opt.startswith(default_symbol)),
+        0,
+    )
+
+    st.markdown('<div class="picker-box">', unsafe_allow_html=True)
+    selection = st.selectbox(
+        "📋 Pick a stock / ETF",
+        options=options,
+        index=default_index,
+        key=f"{key_prefix}_watchlist",
+    )
+
     if selection == CUSTOM_OPTION:
-        return st.text_input(
-            "Enter ticker",
+        symbol = st.text_input(
+            "Enter custom ticker",
             value=default_symbol,
-            key=custom_key,
+            key=f"{key_prefix}_custom",
         ).upper().strip()
-    symbol = label_to_symbol(selection)
-    return symbol or default_symbol
+    else:
+        symbol = label_to_symbol(selection) or default_symbol
+        st.markdown(f"**Selected:** `{symbol}`")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    return symbol
 
 
-def resolve_symbols_multiselect(selection_key: str) -> list[str]:
+def pick_symbols_multiselect(key: str) -> list[str]:
     default_labels = [
         label
         for label in watchlist_labels()
-        if label.startswith(("VGT", "SPY", "AAPL"))
+        if label.startswith(("VGT", "SPY", "TEL"))
     ]
+
+    st.markdown('<div class="picker-box">', unsafe_allow_html=True)
     selected_labels = st.multiselect(
-        "Stocks & ETFs",
+        "📋 Pick stocks / ETFs",
         options=watchlist_labels(),
         default=default_labels,
-        key=selection_key,
-        help="VGT = tech ETF, SPY = S&P 500 ETF, TEL = TE Connectivity",
+        key=key,
     )
+    st.markdown("</div>", unsafe_allow_html=True)
+
     return [label_to_symbol(label) or label.split(" — ")[0] for label in selected_labels]
 
 
@@ -170,19 +195,12 @@ def price_chart(symbol: str, start: str, end: str, trades: list[Trade]) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
-def tab_quote() -> None:
+def tab_quote(symbol: str) -> None:
     st.subheader("Live quote")
-    selection = st.selectbox(
-        "Stock / ETF",
-        options=watchlist_select_options(),
-        index=0,
-        key="quote_pick",
-    )
-    symbol = resolve_symbol(selection, "quote_custom", default_symbol="VGT")
 
     if st.button("Get quote", type="primary", use_container_width=True):
         if not symbol:
-            st.error("Enter a ticker symbol.")
+            st.error("Pick a stock from the dropdown above.")
             return
         try:
             quote = MARKET_DATA.get_quote(symbol)
@@ -204,15 +222,8 @@ def tab_quote() -> None:
         )
 
 
-def tab_backtest() -> None:
+def tab_backtest(symbol: str) -> None:
     st.subheader("Backtest")
-    selection = st.selectbox(
-        "Stock / ETF",
-        options=watchlist_select_options(),
-        index=0,
-        key="bt_pick",
-    )
-    symbol = resolve_symbol(selection, "bt_custom", default_symbol="VGT")
     col1, col2 = st.columns(2)
     start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"))
     end = col2.date_input("End", value=pd.Timestamp("2024-01-01"))
@@ -221,7 +232,7 @@ def tab_backtest() -> None:
 
     if st.button("Run backtest", type="primary", use_container_width=True):
         if not symbol:
-            st.error("Enter a ticker symbol.")
+            st.error("Pick a stock from the dropdown above.")
             return
         if start >= end:
             st.error("End date must be after start date.")
@@ -250,7 +261,7 @@ def tab_backtest() -> None:
 def tab_paper_trade() -> None:
     st.subheader("Paper trade")
     st.caption("Shared portfolio — one cash pool across all symbols")
-    symbols = resolve_symbols_multiselect("pt_symbols")
+    symbols = pick_symbols_multiselect("pt_symbols")
     col1, col2 = st.columns(2)
     start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"), key="pt_start")
     end = col2.date_input("End", value=pd.Timestamp("2024-01-01"), key="pt_end")
@@ -289,12 +300,15 @@ def tab_paper_trade() -> None:
 def main() -> None:
     configure_page()
     render_header()
+
+    symbol = pick_symbol("global", default_symbol="VGT")
+
     quote_tab, backtest_tab, paper_tab = st.tabs(["Quote", "Backtest", "Paper trade"])
 
     with quote_tab:
-        tab_quote()
+        tab_quote(symbol)
     with backtest_tab:
-        tab_backtest()
+        tab_backtest(symbol)
     with paper_tab:
         tab_paper_trade()
 
