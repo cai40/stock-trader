@@ -6,9 +6,9 @@ Standalone Python project for **paper trading**, **market data**, and **strategy
 
 - Portfolio and order management with cash tracking
 - Historical market data via [yfinance](https://github.com/ranaroussi/yfinance)
-- Pluggable strategies (moving-average crossover included)
-- Backtesting engine with performance summary
-- CLI for quotes, backtests, and paper-trade simulation
+- Pluggable strategies (moving-average crossover and RSI included)
+- Backtesting engine with performance summary (return, drawdown, win rate)
+- CLI for quotes, backtests, paper-trade simulation, and strategy listing
 
 ## Quick start
 
@@ -31,11 +31,19 @@ stock-trader quote AAPL
 stock-trader backtest AAPL --start 2023-01-01 --end 2024-01-01 --strategy sma_crossover
 ```
 
+### List strategies
+
+```bash
+stock-trader strategies
+```
+
 ### Simulate paper trading
 
 ```bash
 stock-trader paper-trade AAPL MSFT --cash 10000 --strategy sma_crossover
 ```
+
+Paper trading uses a **shared portfolio** — one cash pool across all symbols.
 
 ## Project layout
 
@@ -47,7 +55,9 @@ stock-trader/
 │   ├── portfolio.py        # Portfolio and execution
 │   ├── market_data.py      # yfinance data provider
 │   ├── backtest.py         # Backtesting engine
+│   ├── metrics.py          # Drawdown and win-rate helpers
 │   └── strategies/         # Trading strategies
+├── AGENTS.md               # Cloud Agent instructions
 ├── tests/
 ├── pyproject.toml
 └── README.md

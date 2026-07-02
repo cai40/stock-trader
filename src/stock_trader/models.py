@@ -86,6 +86,29 @@ class BacktestResult:
     start_cash: float
     end_equity: float
     trades: list[Trade] = field(default_factory=list)
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0
+
+    @property
+    def total_return(self) -> float:
+        if self.start_cash == 0:
+            return 0.0
+        return (self.end_equity - self.start_cash) / self.start_cash
+
+    @property
+    def trade_count(self) -> int:
+        return len(self.trades)
+
+
+@dataclass
+class PortfolioBacktestResult:
+    symbols: list[str]
+    strategy_name: str
+    start_cash: float
+    end_equity: float
+    trades: list[Trade] = field(default_factory=list)
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0
 
     @property
     def total_return(self) -> float:
