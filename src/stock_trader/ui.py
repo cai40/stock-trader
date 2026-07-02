@@ -10,7 +10,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.2.3"
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -63,9 +63,6 @@ def configure_page() -> None:
 def render_header() -> None:
     st.title("📈 Stock Trader")
     st.caption(f"Paper trading & backtesting · v{APP_VERSION}")
-    if st.session_state.get("build") != APP_VERSION:
-        st.session_state.build = APP_VERSION
-        st.toast(f"Loaded v{APP_VERSION} — stock dropdown is above the tabs", icon="📋")
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
@@ -75,12 +72,13 @@ def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
         0,
     )
 
-    st.markdown('<div class="picker-box">', unsafe_allow_html=True)
+    st.markdown("**📋 Pick a stock / ETF**")
     selection = st.selectbox(
-        "📋 Pick a stock / ETF",
+        "Stock / ETF",
         options=options,
         index=default_index,
         key=f"{key_prefix}_watchlist",
+        label_visibility="collapsed",
     )
 
     if selection == CUSTOM_OPTION:
@@ -91,9 +89,8 @@ def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
         ).upper().strip()
     else:
         symbol = label_to_symbol(selection) or default_symbol
-        st.markdown(f"**Selected:** `{symbol}`")
+        st.caption(f"Selected: **{symbol}**")
 
-    st.markdown("</div>", unsafe_allow_html=True)
     return symbol
 
 
@@ -104,14 +101,13 @@ def pick_symbols_multiselect(key: str) -> list[str]:
         if label.startswith(("VGT", "SPY", "TEL"))
     ]
 
-    st.markdown('<div class="picker-box">', unsafe_allow_html=True)
     selected_labels = st.multiselect(
-        "📋 Pick stocks / ETFs",
+        "Stocks / ETFs",
         options=watchlist_labels(),
         default=default_labels,
         key=key,
+        label_visibility="visible",
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
     return [label_to_symbol(label) or label.split(" — ")[0] for label in selected_labels]
 
