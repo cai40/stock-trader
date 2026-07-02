@@ -31,8 +31,19 @@ class BacktestEngine:
         start: str,
         end: str,
         initial_cash: float = 10_000.0,
+        history: pd.DataFrame | None = None,
     ) -> BacktestResult:
-        history = self.market_data.get_history(symbol, start=start, end=end)
+        if history is None:
+            history = self.market_data.get_history(symbol, start=start, end=end)
+        return self._run_on_history(symbol, strategy, history, initial_cash)
+
+    def _run_on_history(
+        self,
+        symbol: str,
+        strategy: Strategy,
+        history: pd.DataFrame,
+        initial_cash: float,
+    ) -> BacktestResult:
         signals = strategy.generate_signals(symbol, history)
         portfolio, equity_curve = self._simulate_daily(
             symbol=symbol,
@@ -83,7 +94,14 @@ class BacktestEngine:
                 )
                 continue
 
-            result = self.run(symbol, get_strategy(name), start, end, initial_cash)
+            result = self.run(
+                symbol,
+                get_strategy(name),
+                start,
+                end,
+                initial_cash,
+                history=history,
+            )
             curves[name] = result.equity_curve
             results[name] = result
 

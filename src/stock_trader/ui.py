@@ -11,12 +11,17 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 
 COMPARE_OPTIONS = ["buy_and_hold", *list_strategies()]
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_history(symbol: str, start: str, end: str) -> pd.DataFrame:
+    return MARKET_DATA.get_history(symbol, start=start, end=end)
 
 PAGE_CSS = """
 <style>
