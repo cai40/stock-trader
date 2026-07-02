@@ -57,6 +57,20 @@ python3 -m streamlit run src/stock_trader/ui.py --server.address 0.0.0.0 --serve
 
 Open the URL shown in the terminal (port **8501**). Works on iPhone Safari when the server is reachable (Cursor web, Codespaces, etc.).
 
+**If the direct URL doesn't load** (cloud VMs block public ports), run:
+
+```bash
+bash scripts/start-ui.sh
+```
+
+This starts Streamlit and prints a public `http://bore.pub:PORT` link you can open on your iPhone.
+
+**Permanent hosting (recommended):** deploy free on [Streamlit Community Cloud](https://share.streamlit.io):
+1. Merge this repo to `main`
+2. Go to share.streamlit.io → New app → select `cai40/stock-trader`
+3. Main file: `streamlit_app.py`, requirements: `requirements-ui.txt`
+4. You get a stable URL like `https://stock-trader.streamlit.app`
+
 Tabs: **Quote** · **Backtest** · **Paper trade**
 
 ## Project layout
