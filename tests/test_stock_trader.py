@@ -106,6 +106,45 @@ def test_list_strategies_includes_builtin_strategies() -> None:
     names = list_strategies()
     assert "sma_crossover" in names
     assert "rsi" in names
+    assert "ema_crossover" in names
+    assert "macd" in names
+    assert "bollinger" in names
+
+
+def test_backtest_returns_daily_equity_curve() -> None:
+    history = make_trending_history()
+    market_data: MarketDataProvider = FakeMarketData({"TEST": history})
+    engine = BacktestEngine(market_data)
+    strategy = MovingAverageCrossoverStrategy(fast_window=3, slow_window=5)
+
+    result = engine.run(
+        "TEST",
+        strategy,
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+    )
+
+    assert len(result.equity_curve) == len(history)
+    assert float(result.equity_curve.iloc[0]) == 10_000.0
+
+
+def test_compare_strategies_includes_buy_and_hold() -> None:
+    history = make_trending_history()
+    market_data: MarketDataProvider = FakeMarketData({"TEST": history})
+    engine = BacktestEngine(market_data)
+
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["buy_and_hold", "sma_crossover"],
+    )
+
+    assert "buy_and_hold" in comparison.curves
+    assert "sma_crossover" in comparison.curves
+    assert len(comparison.curves["buy_and_hold"]) == len(history)
 
 
 def test_get_strategy_returns_rsi() -> None:

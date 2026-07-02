@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from stock_trader.strategies.base import Strategy
+from stock_trader.strategies.bollinger import BollingerBandsStrategy
+from stock_trader.strategies.ema import EMACrossoverStrategy
+from stock_trader.strategies.macd import MACDStrategy
 from stock_trader.strategies.rsi import RSIStrategy
 from stock_trader.strategies.sma import MovingAverageCrossoverStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
     MovingAverageCrossoverStrategy.name: MovingAverageCrossoverStrategy,
+    EMACrossoverStrategy.name: EMACrossoverStrategy,
     RSIStrategy.name: RSIStrategy,
+    MACDStrategy.name: MACDStrategy,
+    BollingerBandsStrategy.name: BollingerBandsStrategy,
 }
 
 
@@ -24,6 +30,9 @@ def get_strategy(name: str, **kwargs) -> Strategy:
 
 
 __all__ = [
+    "BollingerBandsStrategy",
+    "EMACrossoverStrategy",
+    "MACDStrategy",
     "MovingAverageCrossoverStrategy",
     "RSIStrategy",
     "STRATEGIES",

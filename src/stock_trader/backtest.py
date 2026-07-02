@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from stock_trader.benchmarks import buy_and_hold_equity, equity_metrics
 from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
 from stock_trader.models import (
@@ -13,9 +14,10 @@ from stock_trader.models import (
     PortfolioBacktestResult,
     Quote,
     Signal,
+    StrategyComparison,
 )
 from stock_trader.portfolio import Portfolio
-from stock_trader.strategies import Strategy
+from stock_trader.strategies import Strategy, get_strategy, list_strategies
 
 
 class BacktestEngine:
@@ -32,22 +34,14 @@ class BacktestEngine:
     ) -> BacktestResult:
         history = self.market_data.get_history(symbol, start=start, end=end)
         signals = strategy.generate_signals(symbol, history)
-        portfolio = Portfolio(cash=initial_cash)
-        price_lookup = self._price_lookup(history)
-
-        equity_curve = self._execute_signals(
-            portfolio,
-            symbol,
-            signals,
-            price_lookup,
-            initial_cash,
+        portfolio, equity_curve = self._simulate_daily(
+            symbol=symbol,
+            history=history,
+            signals=signals,
+            initial_cash=initial_cash,
         )
 
-        final_timestamp = history.index[-1].to_pydatetime()
-        final_price = float(history.iloc[-1]["Close"])
-        final_quote = Quote(symbol=symbol, price=final_price, timestamp=final_timestamp)
-        end_equity = portfolio.equity({symbol: final_quote})
-        equity_curve.append(end_equity)
+        end_equity = float(equity_curve.iloc[-1]) if not equity_curve.empty else initial_cash
 
         return BacktestResult(
             symbol=symbol,
@@ -55,8 +49,51 @@ class BacktestEngine:
             start_cash=initial_cash,
             end_equity=end_equity,
             trades=portfolio.trades,
-            max_drawdown=compute_max_drawdown(equity_curve),
+            max_drawdown=compute_max_drawdown(equity_curve.tolist()),
             win_rate=compute_win_rate(portfolio.trades),
+            equity_curve=equity_curve,
+        )
+
+    def compare_strategies(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        initial_cash: float = 10_000.0,
+        strategy_names: list[str] | None = None,
+    ) -> StrategyComparison:
+        history = self.market_data.get_history(symbol, start=start, end=end)
+        names = strategy_names or (["buy_and_hold", *list_strategies()])
+
+        curves: dict[str, pd.Series] = {}
+        results: dict[str, BacktestResult] = {}
+
+        for name in names:
+            if name == "buy_and_hold":
+                buy_hold = buy_and_hold_equity(history, initial_cash)
+                end_equity, max_dd = equity_metrics(buy_hold, initial_cash)
+                curves[name] = buy_hold
+                results[name] = BacktestResult(
+                    symbol=symbol,
+                    strategy_name="buy_and_hold",
+                    start_cash=initial_cash,
+                    end_equity=end_equity,
+                    max_drawdown=max_dd,
+                    equity_curve=buy_hold,
+                )
+                continue
+
+            result = self.run(symbol, get_strategy(name), start, end, initial_cash)
+            curves[name] = result.equity_curve
+            results[name] = result
+
+        return StrategyComparison(
+            symbol=symbol,
+            start=start,
+            end=end,
+            start_cash=initial_cash,
+            curves=curves,
+            results=results,
         )
 
     def run_portfolio(
@@ -141,57 +178,58 @@ class BacktestEngine:
             win_rate=compute_win_rate(portfolio.trades),
         )
 
+    def _simulate_daily(
+        self,
+        symbol: str,
+        history: pd.DataFrame,
+        signals: list[Signal],
+        initial_cash: float,
+    ) -> tuple[Portfolio, pd.Series]:
+        portfolio = Portfolio(cash=initial_cash)
+        signals_by_ts = {signal.timestamp: signal for signal in signals}
+        equities: list[float] = []
+
+        for timestamp, row in history.iterrows():
+            dt = timestamp.to_pydatetime()
+            price = float(row["Close"])
+            quote = Quote(symbol=symbol, price=price, timestamp=dt)
+
+            signal = signals_by_ts.get(dt)
+            if signal is not None:
+                position = portfolio.position(symbol)
+                if signal.action == "buy":
+                    quantity = portfolio.max_buy_quantity(symbol, price)
+                    if quantity > 0:
+                        portfolio.execute(
+                            Order(
+                                symbol=symbol,
+                                quantity=quantity,
+                                side=OrderSide.BUY,
+                                timestamp=dt,
+                            ),
+                            quote,
+                        )
+                elif signal.action == "sell" and position.quantity > 0:
+                    portfolio.execute(
+                        Order(
+                            symbol=symbol,
+                            quantity=position.quantity,
+                            side=OrderSide.SELL,
+                            timestamp=dt,
+                        ),
+                        quote,
+                    )
+
+            equities.append(portfolio.equity({symbol: quote}))
+
+        equity_curve = pd.Series(equities, index=history.index)
+        return portfolio, equity_curve
+
     def _price_lookup(self, history: pd.DataFrame) -> dict[datetime, float]:
         return {
             index.to_pydatetime(): float(row["Close"])
             for index, row in history.iterrows()
         }
-
-    def _execute_signals(
-        self,
-        portfolio: Portfolio,
-        symbol: str,
-        signals: list[Signal],
-        price_lookup: dict[datetime, float],
-        initial_cash: float,
-    ) -> list[float]:
-        equity_curve = [initial_cash]
-
-        for signal in signals:
-            price = price_lookup.get(signal.timestamp)
-            if price is None:
-                continue
-
-            quote = Quote(symbol=symbol, price=price, timestamp=signal.timestamp)
-            position = portfolio.position(symbol)
-
-            if signal.action == "buy":
-                quantity = portfolio.max_buy_quantity(symbol, price)
-                if quantity <= 0:
-                    continue
-                portfolio.execute(
-                    Order(
-                        symbol=symbol,
-                        quantity=quantity,
-                        side=OrderSide.BUY,
-                        timestamp=signal.timestamp,
-                    ),
-                    quote,
-                )
-            elif signal.action == "sell" and position.quantity > 0:
-                portfolio.execute(
-                    Order(
-                        symbol=symbol,
-                        quantity=position.quantity,
-                        side=OrderSide.SELL,
-                        timestamp=signal.timestamp,
-                    ),
-                    quote,
-                )
-
-            equity_curve.append(portfolio.equity({symbol: quote}))
-
-        return equity_curve
 
     @staticmethod
     def _quotes_at_timestamp(

@@ -5,12 +5,15 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
+from stock_trader.charts import PLOTLY_MOBILE_CONFIG, comparison_figure, strategy_label
 from stock_trader.market_data import YFinanceMarketData
 from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResult, Trade
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.3.0"
+
+COMPARE_OPTIONS = ["buy_and_hold", *list_strategies()]
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -191,7 +194,18 @@ def price_chart(symbol: str, start: str, end: str, trades: list[Trade]) -> None:
         xaxis_title="Date",
         yaxis_title="Price ($)",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+
+
+def equity_chart(result: BacktestResult, *, title: str) -> None:
+    if result.equity_curve.empty:
+        return
+    fig = comparison_figure(
+        {result.strategy_name: result.equity_curve},
+        title=title,
+        start_cash=result.start_cash,
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
 
 
 def tab_quote(symbol: str) -> None:
@@ -252,9 +266,75 @@ def tab_backtest(symbol: str) -> None:
 
         st.success("Backtest complete")
         render_metrics(result)
+        equity_chart(result, title=f"{symbol} account value — {strategy_label(strategy)}")
         price_chart(symbol, start.isoformat(), end.isoformat(), result.trades)
         if result.trades:
             st.dataframe(trades_dataframe(result.trades), use_container_width=True, hide_index=True)
+
+
+def tab_compare(symbol: str) -> None:
+    st.subheader("Compare strategies")
+    st.caption("Pinch to zoom · drag to pan · use the range slider below the chart to change the period")
+
+    col1, col2 = st.columns(2)
+    start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"), key="cmp_start")
+    end = col2.date_input("End", value=pd.Timestamp("2024-01-01"), key="cmp_end")
+    cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key="cmp_cash")
+
+    selected = st.multiselect(
+        "Strategies to plot",
+        options=COMPARE_OPTIONS,
+        default=COMPARE_OPTIONS,
+        format_func=strategy_label,
+        key="cmp_strategies",
+    )
+
+    if st.button("Run comparison", type="primary", use_container_width=True):
+        if not symbol:
+            st.error("Pick a stock from the dropdown above.")
+            return
+        if not selected:
+            st.error("Select at least one strategy.")
+            return
+        if start >= end:
+            st.error("End date must be after start date.")
+            return
+
+        with st.spinner(f"Running {len(selected)} strategies on {symbol}..."):
+            try:
+                comparison = ENGINE.compare_strategies(
+                    symbol,
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                    initial_cash=cash,
+                    strategy_names=selected,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+
+        st.success("Comparison ready")
+
+        fig = comparison_figure(
+            comparison.curves,
+            title=f"{symbol} account value by strategy",
+            start_cash=cash,
+        )
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+
+        rows = []
+        for name in selected:
+            result = comparison.results[name]
+            rows.append(
+                {
+                    "Strategy": strategy_label(name),
+                    "End equity": f"${result.end_equity:,.2f}",
+                    "Return": f"{result.total_return * 100:.2f}%",
+                    "Max drawdown": f"{result.max_drawdown * 100:.2f}%",
+                    "Trades": result.trade_count,
+                }
+            )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 def tab_paper_trade() -> None:
@@ -302,12 +382,16 @@ def main() -> None:
 
     symbol = pick_symbol("global", default_symbol="VGT")
 
-    quote_tab, backtest_tab, paper_tab = st.tabs(["Quote", "Backtest", "Paper trade"])
+    quote_tab, backtest_tab, compare_tab, paper_tab = st.tabs(
+        ["Quote", "Backtest", "Compare", "Paper trade"]
+    )
 
     with quote_tab:
         tab_quote(symbol)
     with backtest_tab:
         tab_backtest(symbol)
+    with compare_tab:
+        tab_compare(symbol)
     with paper_tab:
         tab_paper_trade()
 

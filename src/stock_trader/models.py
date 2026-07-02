@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
+import pandas as pd
+
 
 class OrderSide(str, Enum):
     BUY = "buy"
@@ -88,6 +90,7 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
     max_drawdown: float = 0.0
     win_rate: float = 0.0
+    equity_curve: pd.Series = field(default_factory=pd.Series)
 
     @property
     def total_return(self) -> float:
@@ -98,6 +101,16 @@ class BacktestResult:
     @property
     def trade_count(self) -> int:
         return len(self.trades)
+
+
+@dataclass
+class StrategyComparison:
+    symbol: str
+    start: str
+    end: str
+    start_cash: float
+    curves: dict[str, pd.Series] = field(default_factory=dict)
+    results: dict[str, BacktestResult] = field(default_factory=dict)
 
 
 @dataclass
