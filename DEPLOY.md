@@ -4,14 +4,21 @@ Your code is on `main` and ready to deploy. Pick one option:
 
 ## Option 1: Streamlit Community Cloud (recommended, free)
 
-**One tap on iPhone** — open this link in Safari while signed into GitHub:
+**If the app shows a text box instead of a dropdown**, it is on an old build. On your phone:
 
-**https://share.streamlit.io/deploy?repository=cai40/stock-trader&branch=main&mainModule=streamlit_app.py&subdomain=stock-trader-cai40**
+1. Open your app (`cai40.streamlit.app`)
+2. Tap **Manage app** (bottom-right)
+3. Tap **Reboot app**
+4. Wait ~2 minutes, then refresh — you should see **v0.2.2** and **📋 Pick a stock / ETF**
+
+**First-time deploy** — open in Safari while signed into GitHub:
+
+**https://share.streamlit.io/deploy?repository=cai40/stock-trader&branch=main&mainModule=streamlit_app.py&subdomain=cai40**
 
 1. Sign in with GitHub if prompted
 2. Tap **Deploy**
 3. Wait ~2 minutes for the build
-4. Your permanent URL: **https://stock-trader-cai40.streamlit.app**
+4. Your URL: **https://cai40.streamlit.app**
 
 ## Option 2: Render (free tier)
 

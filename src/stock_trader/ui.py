@@ -10,7 +10,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -63,6 +63,9 @@ def configure_page() -> None:
 def render_header() -> None:
     st.title("📈 Stock Trader")
     st.caption(f"Paper trading & backtesting · v{APP_VERSION}")
+    if st.session_state.get("build") != APP_VERSION:
+        st.session_state.build = APP_VERSION
+        st.toast(f"Loaded v{APP_VERSION} — stock dropdown is above the tabs", icon="📋")
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
