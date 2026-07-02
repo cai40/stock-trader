@@ -9,7 +9,7 @@ Your code is on `main` and ready to deploy. Pick one option:
 1. Open your app (`cai40.streamlit.app`)
 2. Tap **Manage app** (bottom-right)
 3. Tap **Reboot app**
-4. Wait ~2 minutes, then refresh — you should see **v0.2.2** and **📋 Pick a stock / ETF**
+4. Wait ~2 minutes, then refresh — you should see **v0.2.3** and **📋 Pick a stock / ETF**
 
 **First-time deploy** — open in Safari while signed into GitHub:
 
