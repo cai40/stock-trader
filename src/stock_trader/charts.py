@@ -153,6 +153,81 @@ def comparison_figure(
     return fig
 
 
+CRASH_LABEL_SHORT: dict[str, str] = {
+    "Dot-com bust": "Dot-com",
+    "Global Financial Crisis": "GFC",
+    "2011 debt crisis": "2011",
+    "2018 Q4 selloff": "2018",
+    "COVID crash": "COVID",
+    "2022 bear market": "2022",
+}
+
+
+def _crash_chart_span(
+    event: object,
+    x_min: pd.Timestamp,
+    x_max: pd.Timestamp,
+) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp] | None:
+    peak = pd.Timestamp(event.peak)
+    trough = pd.Timestamp(event.trough)
+    x0 = max(peak, x_min)
+    x1 = min(trough, x_max)
+    if x0 >= x1:
+        return None
+    return x0, x1, peak
+
+
+def _add_crash_markers(
+    fig: go.Figure,
+    event: object,
+    *,
+    x_min: pd.Timestamp,
+    x_max: pd.Timestamp,
+    rows: tuple[int, ...] = (1, 2),
+) -> None:
+    span = _crash_chart_span(event, x_min, x_max)
+    if span is None:
+        return
+    x0, x1, peak = span
+    mid = x0 + (x1 - x0) / 2
+    label = CRASH_LABEL_SHORT.get(event.name, event.name[:8])
+
+    for row in rows:
+        fig.add_vrect(
+            x0=x0,
+            x1=x1,
+            fillcolor="rgba(248, 113, 113, 0.18)",
+            line_width=1,
+            line_color="rgba(248, 113, 113, 0.45)",
+            layer="below",
+            row=row,
+            col=1,
+        )
+        fig.add_vline(
+            x=peak,
+            line_width=1,
+            line_dash="dot",
+            line_color="rgba(248, 113, 113, 0.7)",
+            row=row,
+            col=1,
+        )
+
+    yref_top = {1: "y domain", 2: "y2 domain"}
+    for row in rows:
+        fig.add_annotation(
+            x=mid,
+            y=0.98,
+            xref="x",
+            yref=yref_top[row],
+            text=label,
+            showarrow=False,
+            yanchor="top",
+            font=dict(size=10, color="#fca5a5"),
+            bgcolor="rgba(26, 31, 46, 0.75)",
+            borderpad=2,
+        )
+
+
 def crash_warning_nasdaq_figure(
     nasdaq: pd.Series,
     composite_score: pd.Series,
@@ -173,17 +248,17 @@ def crash_warning_nasdaq_figure(
         subplot_titles=("NASDAQ (start = 100)", "6-month crash probability (quarterly)"),
     )
 
+    x_min = min(
+        nasdaq.index.min() if not nasdaq.empty else pd.Timestamp.max,
+        composite_score.index.min() if not composite_score.empty else pd.Timestamp.max,
+    )
+    x_max = max(
+        nasdaq.index.max() if not nasdaq.empty else pd.Timestamp.min,
+        composite_score.index.max() if not composite_score.empty else pd.Timestamp.min,
+    )
+
     for event in crashes:
-        for row in (1, 2):
-            fig.add_vrect(
-                x0=event.peak,
-                x1=event.trough,
-                fillcolor="rgba(248, 113, 113, 0.12)",
-                line_width=0,
-                layer="below",
-                row=row,
-                col=1,
-            )
+        _add_crash_markers(fig, event, x_min=x_min, x_max=x_max, rows=(1, 2))
 
     if not nasdaq.empty:
         fig.add_trace(

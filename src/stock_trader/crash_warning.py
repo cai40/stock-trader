@@ -635,7 +635,7 @@ def crashes_in_range(start: pd.Timestamp, end: pd.Timestamp) -> list[CrashEvent]
     for event in HISTORICAL_CRASHES:
         peak = pd.Timestamp(event.peak)
         trough = pd.Timestamp(event.trough)
-        if trough >= start and peak <= end:
+        if peak <= end and trough >= start:
             events.append(event)
     return events
 

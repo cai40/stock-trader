@@ -156,14 +156,23 @@ def test_crashes_in_range_filters_events() -> None:
     assert "Dot-com bust" not in names
 
 
-def test_crash_warning_nasdaq_figure_builds() -> None:
+def test_crashes_in_range_includes_partial_overlap() -> None:
+    events = crashes_in_range(pd.Timestamp("2009-01-01"), pd.Timestamp("2012-01-01"))
+    names = {e.name for e in events}
+    assert "Global Financial Crisis" in names
+    assert "2011 debt crisis" in names
+
+
+def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel).dropna()
     score = crash_probability_chart(features)
     nasdaq = nasdaq_normalized(panel, panel.index[0])
-    events = list(HISTORICAL_CRASHES)
+    events = crashes_in_range(panel.index[0], panel.index[-1])
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
     assert len(fig.data) >= 2
+    crash_labels = [a.text for a in fig.layout.annotations if a.text in {"2018", "COVID", "2022", "GFC", "Dot-com", "2011"}]
+    assert len(crash_labels) == len(events) * 2
 
 
 class MixedTzMarketData:
