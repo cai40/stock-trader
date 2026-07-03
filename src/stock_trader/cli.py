@@ -46,8 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a paper-trade simulation with a shared portfolio",
     )
     paper_parser.add_argument("symbols", nargs="+", help="Ticker symbols")
-    paper_parser.add_argument("--start", default="2023-01-01", help="Start date (YYYY-MM-DD)")
-    paper_parser.add_argument("--end", default="2024-01-01", help="End date (YYYY-MM-DD)")
+    paper_parser.add_argument("--start", default="2013-01-01", help="Start date (YYYY-MM-DD)")
+    paper_parser.add_argument("--end", default="2026-06-01", help="End date (YYYY-MM-DD)")
     paper_parser.add_argument(
         "--strategy",
         default="sma_crossover",

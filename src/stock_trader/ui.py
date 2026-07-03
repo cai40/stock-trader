@@ -11,7 +11,10 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.3.3"
+
+DEFAULT_START = pd.Timestamp("2013-01-01")
+DEFAULT_END = pd.Timestamp("2026-06-01")
 
 COMPARE_OPTIONS = ["buy_and_hold", "dual_momentum", *list_strategies()]
 
@@ -243,8 +246,8 @@ def tab_quote(symbol: str) -> None:
 def tab_backtest(symbol: str) -> None:
     st.subheader("Backtest")
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"))
-    end = col2.date_input("End", value=pd.Timestamp("2024-01-01"))
+    start = col1.date_input("Start", value=DEFAULT_START)
+    end = col2.date_input("End", value=DEFAULT_END)
     strategy = st.selectbox("Strategy", list_strategies())
     cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0)
 
@@ -287,8 +290,8 @@ def tab_compare(symbol: str) -> None:
     )
 
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"), key="cmp_start")
-    end = col2.date_input("End", value=pd.Timestamp("2024-01-01"), key="cmp_end")
+    start = col1.date_input("Start", value=DEFAULT_START, key="cmp_start")
+    end = col2.date_input("End", value=DEFAULT_END, key="cmp_end")
     cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key="cmp_cash")
 
     selected = st.multiselect(
@@ -352,8 +355,8 @@ def tab_paper_trade() -> None:
     st.caption("Shared portfolio — one cash pool across all symbols")
     symbols = pick_symbols_multiselect("pt_symbols")
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=pd.Timestamp("2023-01-01"), key="pt_start")
-    end = col2.date_input("End", value=pd.Timestamp("2024-01-01"), key="pt_end")
+    start = col1.date_input("Start", value=DEFAULT_START, key="pt_start")
+    end = col2.date_input("End", value=DEFAULT_END, key="pt_end")
     strategy = st.selectbox("Strategy", list_strategies(), key="pt_strategy")
     cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key="pt_cash")
 
