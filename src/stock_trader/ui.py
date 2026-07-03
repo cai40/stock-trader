@@ -13,12 +13,12 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.6"
+APP_VERSION = "0.3.7"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
 
-COMPARE_OPTIONS = ["buy_and_hold", "dual_momentum", *list_strategies()]
+COMPARE_OPTIONS = ["buy_and_hold", "vol_target", "dual_momentum", *list_strategies()]
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -291,9 +291,8 @@ def tab_compare(symbol: str) -> None:
     st.subheader("Compare strategies")
     st.caption(
         "Use the range slider below the chart to change the visible period. "
-        "In strong bull markets (e.g. 2023), buy-and-hold often wins on total return. "
-        "Trend filter, absolute momentum, and dual momentum tend to beat buy-and-hold "
-        "when markets crash or chop — try 2007–2012 on SPY."
+        "On long bull runs, **Vol Target** scales exposure up in calm markets and can beat buy-and-hold. "
+        "Trend/momentum strategies reduce drawdowns but often lag in straight rallies."
     )
 
     col1, col2 = st.columns(2)

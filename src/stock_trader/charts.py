@@ -13,6 +13,7 @@ STRATEGY_COLORS: dict[str, str] = {
     "absolute_momentum": "#34d399",
     "trend_filter": "#22d3ee",
     "dual_momentum": "#c084fc",
+    "vol_target": "#4ade80",
 }
 
 STRATEGY_LABELS: dict[str, str] = {
@@ -25,6 +26,7 @@ STRATEGY_LABELS: dict[str, str] = {
     "absolute_momentum": "Absolute Momentum (12mo)",
     "trend_filter": "Trend Filter (200 SMA)",
     "dual_momentum": "Dual Momentum (SPY vs SHY)",
+    "vol_target": "Vol Target (15% target)",
 }
 
 PLOTLY_MOBILE_CONFIG = {

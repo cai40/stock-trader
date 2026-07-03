@@ -11,6 +11,7 @@ from stock_trader.metrics import compute_max_drawdown, compute_win_rate
 from stock_trader.models import Order, OrderSide, Quote
 from stock_trader.portfolio import Portfolio
 from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.vol_target import vol_target_equity
 from stock_trader.strategies import (
     MovingAverageCrossoverStrategy,
     get_strategy,
@@ -155,6 +156,34 @@ def test_dual_momentum_equity_curve() -> None:
     equity = dual_momentum_equity(risk, safe, initial_cash=10_000.0, lookback=60)
     assert len(equity) == len(risk)
     assert float(equity.iloc[0]) > 0
+
+
+def test_vol_target_equity_curve() -> None:
+    dates = pd.date_range("2022-01-01", periods=120, freq="B")
+    prices = [100 + i * 0.2 + (i % 10) for i in range(120)]
+    history = pd.DataFrame({"Close": prices}, index=dates)
+
+    equity = vol_target_equity(history, initial_cash=10_000.0)
+    assert len(equity) == len(history)
+    assert float(equity.iloc[0]) == 10_000.0
+    assert float(equity.iloc[-1]) > 0
+
+
+def test_compare_strategies_includes_vol_target() -> None:
+    history = make_trending_history()
+    market_data: MarketDataProvider = FakeMarketData({"TEST": history})
+    engine = BacktestEngine(market_data)
+
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["buy_and_hold", "vol_target"],
+    )
+
+    assert "vol_target" in comparison.curves
+    assert len(comparison.curves["vol_target"]) == len(history)
 
 
 def test_compare_strategies_includes_dual_momentum() -> None:

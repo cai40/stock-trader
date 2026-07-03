@@ -6,6 +6,7 @@ import pandas as pd
 
 from stock_trader.benchmarks import buy_and_hold_equity, equity_metrics
 from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.vol_target import vol_target_equity
 from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
 from stock_trader.models import (
@@ -25,6 +26,15 @@ WARMUP_CALENDAR_DAYS = 400
 
 def _warmup_start(start: str) -> str:
     return (pd.Timestamp(start) - pd.Timedelta(days=WARMUP_CALENDAR_DAYS)).strftime("%Y-%m-%d")
+
+
+def _rebase_equity(equity: pd.Series, initial_cash: float) -> pd.Series:
+    if equity.empty:
+        return equity
+    start_value = float(equity.iloc[0])
+    if start_value == 0:
+        return equity
+    return equity / start_value * initial_cash
 
 
 class BacktestEngine:
@@ -52,6 +62,8 @@ class BacktestEngine:
         trimmed = result.equity_curve.loc[result.equity_curve.index >= start_ts]
         if trimmed.empty:
             return result
+
+        trimmed = _rebase_equity(trimmed, result.start_cash)
 
         trades = [trade for trade in result.trades if trade.timestamp >= start_ts.to_pydatetime()]
         return BacktestResult(
@@ -115,7 +127,7 @@ class BacktestEngine:
 
         for name in names:
             if name == "buy_and_hold":
-                buy_hold = buy_and_hold_equity(history, initial_cash)
+                buy_hold = _rebase_equity(buy_and_hold_equity(history, initial_cash), initial_cash)
                 end_equity, max_dd = equity_metrics(buy_hold, initial_cash)
                 curves[name] = buy_hold
                 results[name] = BacktestResult(
@@ -134,12 +146,27 @@ class BacktestEngine:
                         "SHY", start=_warmup_start(start), end=end
                     )
                 equity = dual_momentum_equity(full_history, safe_history, initial_cash)
-                equity = equity.loc[equity.index >= start_ts]
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
                 end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
                 curves[name] = equity
                 results[name] = BacktestResult(
                     symbol=symbol,
                     strategy_name="dual_momentum",
+                    start_cash=initial_cash,
+                    end_equity=end_equity,
+                    max_drawdown=compute_max_drawdown(equity.tolist()),
+                    equity_curve=equity,
+                )
+                continue
+
+            if name == "vol_target":
+                equity = vol_target_equity(full_history, initial_cash)
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
+                curves[name] = equity
+                results[name] = BacktestResult(
+                    symbol=symbol,
+                    strategy_name="vol_target",
                     start_cash=initial_cash,
                     end_equity=end_equity,
                     max_drawdown=compute_max_drawdown(equity.tolist()),
