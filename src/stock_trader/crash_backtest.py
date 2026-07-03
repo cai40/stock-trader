@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from stock_trader.crash_probability import (
-    CRASH_ALERT_THRESHOLD,
-    crash_probability_series,
+from stock_trader.crash_warning import CRASH_ALERT_THRESHOLD, HISTORICAL_CRASHES
+from stock_trader.leading_crash import (
+    is_leading_eligible,
+    leading_crash_probability_series,
 )
-from stock_trader.crash_warning import HISTORICAL_CRASHES
 
 CRASH_DRAWDOWN = 0.15
 FORWARD_3M = 63
@@ -67,8 +67,12 @@ def _threshold_metrics(
     scores: pd.Series,
     crash_label: pd.Series,
     threshold: float,
+    *,
+    eligible: pd.Series | None = None,
 ) -> tuple[float, float, int, int]:
     pred = (scores >= threshold).astype(int)
+    if eligible is not None:
+        pred = pred & eligible.astype(int)
     mask = crash_label.notna()
     tp = int(((pred == 1) & (crash_label == 1))[mask].sum())
     fp = int(((pred == 1) & (crash_label == 0))[mask].sum())
@@ -96,8 +100,8 @@ class CrashScoreBacktest:
     auc_6m: float
     auc_12m: float
     alert_threshold: float
-    alert_precision_6m: float
-    alert_recall_6m: float
+    alert_precision_12m: float
+    alert_recall_12m: float
     alert_days: int
     crash_prob_at_alert: float
     crash_prob_baseline: float
@@ -113,24 +117,28 @@ def run_crash_score_backtest(
     *,
     alert_threshold: float = CRASH_ALERT_THRESHOLD,
 ) -> CrashScoreBacktest:
-    """Validate crash probability against forward NASDAQ drawdowns."""
+    """Validate leading crash probability against forward NASDAQ drawdowns."""
     if features.empty or nasdaq.empty:
         raise ValueError("features and nasdaq price series are required")
 
     ixic = nasdaq.reindex(features.index).ffill()
-    daily_prob = crash_probability_series(features, monthly=False)
-    crash_6m = (_forward_max_drawdown(ixic, FORWARD_6M) <= -CRASH_DRAWDOWN).astype(int)
+    daily_prob = leading_crash_probability_series(features, monthly=False)
+    eligible = pd.Series(
+        [is_leading_eligible(features.iloc[i]) for i in range(len(features))],
+        index=features.index,
+    )
+    crash_12m = (_forward_max_drawdown(ixic, FORWARD_12M) <= -CRASH_DRAWDOWN).astype(int)
 
     precision, recall, alerts, _ = _threshold_metrics(
-        daily_prob, crash_6m, alert_threshold
+        daily_prob, crash_12m, alert_threshold, eligible=eligible
     )
 
-    alert_mask = daily_prob >= alert_threshold
-    prob_at_alert = float(crash_6m[alert_mask].mean()) if alert_mask.any() else float("nan")
-    prob_base = float(crash_6m.mean())
-
-    # Mean absolute calibration error: |stated prob - actual rate| on alert days
-    cal_error = float(abs(daily_prob[alert_mask].mean() - prob_at_alert)) if alert_mask.any() else 0.0
+    alert_mask = (daily_prob >= alert_threshold) & eligible
+    prob_at_alert = float(crash_12m[alert_mask].mean()) if alert_mask.any() else float("nan")
+    prob_base = float(crash_12m[eligible].mean()) if eligible.any() else float(crash_12m.mean())
+    cal_error = (
+        float(abs(daily_prob[alert_mask].mean() - prob_at_alert)) if alert_mask.any() else 0.0
+    )
 
     early: list[EarlyWarningResult] = []
     hits = 0
@@ -139,9 +147,10 @@ def run_crash_score_backtest(
         if peak < features.index[0] or peak > features.index[-1]:
             continue
         window = daily_prob.loc[peak - pd.Timedelta(days=EARLY_WARNING_DAYS) : peak]
-        flagged = bool((window >= alert_threshold).any()) if len(window) else False
+        elig_w = eligible.loc[window.index]
+        flagged = bool(((window >= alert_threshold) & elig_w).any()) if len(window) else False
         hits += int(flagged)
-        prior_max = float(window.max()) if len(window) else float("nan")
+        prior_max = float(window[elig_w].max()) if elig_w.any() else float("nan")
         at_peak = float(daily_prob.loc[:peak].iloc[-1]) if len(daily_prob.loc[:peak]) else float("nan")
         early.append(
             EarlyWarningResult(
@@ -161,8 +170,8 @@ def run_crash_score_backtest(
         auc_6m=_auc_for_horizon(daily_prob, ixic, days=FORWARD_6M),
         auc_12m=_auc_for_horizon(daily_prob, ixic, days=FORWARD_12M),
         alert_threshold=alert_threshold,
-        alert_precision_6m=precision,
-        alert_recall_6m=recall,
+        alert_precision_12m=precision,
+        alert_recall_12m=recall,
         alert_days=alerts,
         crash_prob_at_alert=prob_at_alert,
         crash_prob_baseline=prob_base,
@@ -184,23 +193,21 @@ def backtest_summary_markdown(result: CrashScoreBacktest) -> str:
     return f"""
 **Validation period:** {result.period_start} → {result.period_end} ({result.n_days:,} trading days)
 
-**Forward prediction (NASDAQ 15%+ drawdown within 6 months):**
+**Leading model** — excludes days already in selloff (NASDAQ/SPY down 8%+ or VIX surging).
+
+**Forward prediction (NASDAQ 15%+ drawdown):**
 
 | Metric | Value |
 |--------|-------|
 | AUC 3mo / 6mo / 12mo | {result.auc_3m:.2f} / {result.auc_6m:.2f} / {result.auc_12m:.2f} |
-| **At ≥{result.alert_threshold:.0%} alert** | **{result.crash_prob_at_alert:.1%}** actual crash rate |
-| Baseline (all days) | {result.crash_prob_baseline:.1%} |
+| **At ≥{result.alert_threshold:.0%} leading alert** | **{result.crash_prob_at_alert:.1%}** actual 12mo crash rate |
+| Baseline (leading-eligible days) | {result.crash_prob_baseline:.1%} |
 | Edge over baseline | **{edge:+.1%}** |
-| Precision / recall | {result.alert_precision_6m:.0%} / {result.alert_recall_6m:.0%} |
+| Precision / recall (12mo) | {result.alert_precision_12m:.0%} / {result.alert_recall_12m:.0%} |
 | Alert days | {result.alert_days:,} |
-| Calibration error on alerts | {result.calibration_error:.1%} |
 
-**Early warning** (probability ≥ {result.alert_threshold:.0%} within 12 months before peak):
+**Early warning** (≥{result.alert_threshold:.0%} within 12 months before crash peak):
 {result.early_warning_hits}/{result.early_warning_total} major episodes flagged
 
 {ew_lines}
-
-*When the dashboard shows ≥80%, it means that exact signal pattern historically
-led to a 15%+ NASDAQ drawdown within 6 months at that rate.*
 """

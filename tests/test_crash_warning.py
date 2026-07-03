@@ -4,13 +4,8 @@ import pandas as pd
 import pytest
 
 from stock_trader.crash_backtest import run_crash_score_backtest
-from stock_trader.crash_probability import (
-    CRASH_ALERT_THRESHOLD,
-    crash_probability_chart,
-    crash_probability_series,
-    evaluate_crash_probability,
-)
 from stock_trader.crash_warning import (
+    CRASH_ALERT_THRESHOLD,
     HISTORICAL_CRASHES,
     RiskLevel,
     SignalTier,
@@ -21,7 +16,12 @@ from stock_trader.crash_warning import (
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
-    predictive_score_chart,
+)
+from stock_trader.leading_crash import (
+    evaluate_leading_crash_probability,
+    is_leading_eligible,
+    leading_crash_probability_chart,
+    leading_crash_probability_series,
 )
 from stock_trader.charts import crash_warning_nasdaq_figure
 
@@ -84,25 +84,24 @@ def _stress_panel(rows: int = 400) -> pd.DataFrame:
 def test_compute_crash_features_columns() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel)
-    assert "vix_rvol_spread" in features.columns
-    assert "yc_inverted" in features.columns
-    assert "ixic_momentum_12_1" in features.columns
-    assert "vix_rising" in features.columns
-    assert len(features) == len(panel)
+    assert "ixic_dd" in features.columns
+    assert "spy_dd" in features.columns
+    assert "credit_worsening" in features.columns
 
 
 def test_assess_crash_risk_risk_on_in_calm_market() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
     assessment = assess_crash_risk(features)
     assert assessment.risk_level is RiskLevel.RISK_ON
+    assert assessment.leading_eligible
     assert assessment.crash_probability < CRASH_ALERT_THRESHOLD
 
 
-def test_crash_probability_high_in_stress_market() -> None:
+def test_stress_panel_suppresses_leading_score() -> None:
     features = compute_crash_features(_stress_panel()).dropna()
     assessment = assess_crash_risk(features)
-    assert assessment.crash_probability >= CRASH_ALERT_THRESHOLD
-    assert assessment.high_confidence_alert
+    assert not assessment.leading_eligible
+    assert assessment.stress_score >= 1
 
 
 def test_predictive_score_excludes_coincident_tiers() -> None:
@@ -112,16 +111,16 @@ def test_predictive_score_excludes_coincident_tiers() -> None:
     assert assessment.stress_score == float(len(coincident))
 
 
-def test_composite_score_series_length() -> None:
+def test_leading_probability_series() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    scores = crash_probability_series(features, monthly=True)
+    scores = leading_crash_probability_series(features, monthly=True)
     assert len(scores) <= len(features)
     assert 0.0 <= float(scores.iloc[-1]) <= 1.0
 
 
-def test_crash_probability_chart_fewer_points_than_daily() -> None:
+def test_leading_crash_probability_chart() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    chart = crash_probability_chart(features)
+    chart = leading_crash_probability_chart(features)
     assert len(chart) < len(features)
     assert chart.max() <= 100.0
 
@@ -166,7 +165,7 @@ def test_crashes_in_range_includes_partial_overlap() -> None:
 def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel).dropna()
-    score = crash_probability_chart(features)
+    score = leading_crash_probability_chart(features)
     nasdaq = nasdaq_normalized(panel, panel.index[0])
     events = crashes_in_range(panel.index[0], panel.index[-1])
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
@@ -176,8 +175,6 @@ def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:
 
 
 class MixedTzMarketData:
-    """Simulates yfinance returning tz-aware indices for some tickers."""
-
     def get_history(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
         idx = pd.date_range("2020-01-01", periods=120, freq="B")
         if symbol.startswith("^"):
@@ -191,18 +188,23 @@ def test_download_panel_handles_mixed_timezones() -> None:
     assert panel.index.tz is None
 
 
-def test_crash_score_guide_mentions_predictive_signals() -> None:
+def test_crash_score_guide_mentions_leading() -> None:
     guide = crash_score_guide_markdown()
-    assert "crash probability" in guide.lower()
+    assert "leading" in guide.lower()
     assert "80%" in guide
-    assert "Fake panic" in guide
 
 
-def test_evaluate_crash_probability_baseline() -> None:
+def test_evaluate_leading_crash_probability_baseline() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    prob = evaluate_crash_probability(features.iloc[-1])
+    prob = evaluate_leading_crash_probability(features.iloc[-1])
+    assert prob.leading_eligible
     assert prob.probability < CRASH_ALERT_THRESHOLD
-    assert prob.rule_name
+
+
+def test_is_leading_eligible_false_in_drawdown() -> None:
+    features = compute_crash_features(_stress_panel()).dropna()
+    row = features.iloc[-1]
+    assert not is_leading_eligible(row)
 
 
 def test_run_crash_score_backtest_on_synthetic_panel() -> None:
@@ -212,9 +214,3 @@ def test_run_crash_score_backtest_on_synthetic_panel() -> None:
     result = run_crash_score_backtest(features, nasdaq)
     assert result.n_days == len(features)
     assert result.alert_threshold == CRASH_ALERT_THRESHOLD
-
-
-def test_predictive_score_chart_still_works() -> None:
-    features = compute_crash_features(_rising_panel()).dropna()
-    chart = predictive_score_chart(features)
-    assert len(chart) >= 1

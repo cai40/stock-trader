@@ -84,10 +84,13 @@ def risk_level_color(level: RiskLevel) -> str:
 
 
 def crash_score_guide_markdown() -> str:
-    """Detailed explanation of the predictive crash score for the UI guide."""
-    predictive_lines = "\n".join(
-        f"- **{rule.label}** ({rule.tier.value}) — {rule.description}"
+    """Detailed explanation of the leading crash probability for the UI guide."""
+    from stock_trader.leading_crash import leading_crash_guide_snippet
+
+    macro_market_lines = "\n".join(
+        f"- **{rule.label}** — {rule.description}"
         for rule in PREDICTIVE_SIGNAL_RULES
+        if rule.key in {"yc_inverted", "yc_deteriorating", "credit_stress", "smallcap_lag"}
     )
     coincident_lines = "\n".join(
         f"- **{rule.label}** — {rule.description}" for rule in COINCIDENT_SIGNAL_RULES
@@ -95,82 +98,30 @@ def crash_score_guide_markdown() -> str:
     return f"""
 ### What is the crash score?
 
-A **6-month NASDAQ crash probability** (0–100%) built from historically calibrated
-**signal confluence patterns**. When multiple stress signals align, the dashboard
-shows the **historical crash rate** for that exact pattern (backtested 1994–2026).
+A **12-month leading crash probability** (0–100%) using macro/market **precursors only**.
+VIX spikes, momentum breaks, and NASDAQ lag during selloffs are **excluded**.
 
-**High-confidence alert:** probability **≥ 80%** — only fires when a proven
-multi-signal pattern matches (e.g. VIX surge + negative momentum + NASDAQ lagging).
+{leading_crash_guide_snippet()}
 
-Data sources: **SPY**, **NASDAQ (^IXIC)**, **VIX**, **Treasury yields** (^TNX / ^IRX),
-**HYG** (high-yield credit), **LQD** (investment-grade credit), **IWM** (small caps).
+**Leading signals used:**
+{macro_market_lines}
 
----
-
-### Predictive signals (9)
-
-{predictive_lines}
-
-**Tiers:**
-- **Macro** — slow-moving recession precursors (yield curve)
-- **Market** — medium-term stress (credit, VIX build-up, momentum)
-- **NASDAQ** — tech/growth weakness specific to NASDAQ crashes
-
----
-
-### Live stress (not in score)
-
-These fire **during** selloffs and are shown separately — they do **not** increase the
-predictive score:
-
+**Live stress (during selloffs — suppressed from leading score):**
 {coincident_lines}
-
----
-
-### How the probability is calculated
-
-Each day, the dashboard checks **confluence rules** (ordered most-specific first).
-The first matching pattern sets the probability — e.g.:
-
-| Pattern | Historical 6mo crash rate |
-|---------|--------------------------|
-| VIX surge + momentum + NASDAQ lag | **~100%** (n=41) |
-| VIX stress + momentum + NASDAQ lag | **~88%** (n=58) |
-| VIX surge + NASDAQ weakness | **~84%** (n=67) |
-| No pattern matched | **~29%** (baseline) |
-
-The **header** shows today's probability. The **chart** plots quarterly probability
-with 2-quarter smoothing (0–100% scale).
-
----
 
 ### Risk levels
 
-| Level | Trigger | Suggested posture |
-|-------|---------|-------------------|
-| **Risk-on** | < 45% | Normal exposure |
-| **Caution** | 45–64% | Trim equity 25–50% |
-| **Defensive** | 65–79% | Rotate to bonds/cash |
-| **Critical** | **≥ 80%** | Maximum defense — high-confidence alert |
-
-Chart reference line: **red = 80%** (high-confidence threshold).
-
----
-
-### Fake panic filter
-
-If VIX is rising but **credit markets are calm** and SPY is **above its 200-day
-average**, the dashboard may downgrade the risk level — headline fear without
-systemic stress.
-
----
+| Level | Trigger |
+|-------|---------|
+| **Risk-on** | < 45% |
+| **Caution** | 45–79% |
+| **Critical** | **≥ 80%** leading alert |
 
 ### Limitations
 
-- No score predicts every crash; false alarms still happen
-- Credit ETF data (HYG/LQD) only exists from ~2007 onward
-- Backtest stats in the dashboard show historical accuracy — not a guarantee
-- Educational research tool — **not financial advice**
+- Credit data from ~2007; limited Dot-com coverage
+- 12-month horizon — alerts can precede peaks by months
+- Not financial advice
 """
 
 
@@ -312,6 +263,8 @@ class CrashAssessment:
     crash_probability: float = 0.0
     probability_rule: str = ""
     high_confidence_alert: bool = False
+    leading_eligible: bool = True
+    horizon_months: int = 12
 
 
 def _download_panel(
@@ -372,9 +325,15 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
         ixic = panel["IXIC"]
         feat["ixic_momentum_12_1"] = ixic.pct_change(MOMENTUM_LONG) - ixic.pct_change(MOMENTUM_SHORT)
         feat["ixic_mom_63"] = ixic.pct_change(SMALLCAP_LAG_WINDOW)
+        feat["ixic_dd"] = ixic / ixic.expanding().max() - 1
         feat["ixic_lag"] = ixic.pct_change(SMALLCAP_LAG_WINDOW) - spy.pct_change(
             SMALLCAP_LAG_WINDOW
         )
+
+    feat["spy_dd"] = spy / spy.expanding().max() - 1
+
+    if "credit_stress" in feat.columns:
+        feat["credit_worsening"] = feat["credit_stress"].diff(21)
 
     return feat
 
@@ -488,8 +447,8 @@ def _risk_level_from_probability(probability: float) -> RiskLevel:
 
 
 def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
-    """Evaluate predictive crash signals on the last row of *features*."""
-    from stock_trader.crash_probability import evaluate_crash_probability
+    """Evaluate leading crash signals on the last row of *features*."""
+    from stock_trader.leading_crash import evaluate_leading_crash_probability
 
     if features.empty:
         raise ValueError("feature frame is empty")
@@ -514,11 +473,11 @@ def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
     composite = _predictive_score(macro, market, nasdaq)
     stress = _stress_score(coincident)
 
-    prob_assessment = evaluate_crash_probability(row)
+    prob_assessment = evaluate_leading_crash_probability(row)
     level = _risk_level_from_probability(prob_assessment.probability)
-    if fake_panic and level is RiskLevel.CRITICAL and not prob_assessment.high_confidence:
-        level = RiskLevel.CAUTION
-    elif fake_panic and level is RiskLevel.DEFENSIVE:
+    if not prob_assessment.leading_eligible:
+        level = RiskLevel.CAUTION if stress >= 2 else RiskLevel.RISK_ON
+    elif fake_panic and level is RiskLevel.DEFENSIVE and not prob_assessment.high_confidence:
         level = RiskLevel.CAUTION
 
     predictive_active = macro + market + nasdaq
@@ -540,6 +499,8 @@ def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
         crash_probability=prob_assessment.probability,
         probability_rule=prob_assessment.rule_name,
         high_confidence_alert=prob_assessment.high_confidence,
+        leading_eligible=prob_assessment.leading_eligible,
+        horizon_months=prob_assessment.horizon_months,
     )
 
 

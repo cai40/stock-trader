@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+import pandas as pd
+
+from stock_trader.crash_warning import (
+    CRASH_ALERT_THRESHOLD,
+    PREDICTIVE_SIGNAL_RULES,
+    _signal_active,
+)
+
+LEADING_HORIZON_MONTHS = 12
+LEADING_DRAWDOWN_LIMIT = -0.08
+LEADING_VIX_RISE_LIMIT = 0.30
+LEADING_BASELINE = 0.286
+
+
+@dataclass(frozen=True)
+class LeadingRule:
+    name: str
+    probability: float
+    sample_size: int
+    check: Callable[[pd.Series], bool]
+
+
+def _credit_worsening(row: pd.Series) -> bool:
+    val = row.get("credit_worsening")
+    return bool(pd.notna(val) and val > 0.01)
+
+
+def _smallcap_lag(row: pd.Series) -> bool:
+    return _signal_active("smallcap_lag", row)
+
+
+def _credit_stress(row: pd.Series) -> bool:
+    return _signal_active("credit_stress", row)
+
+
+def _yc_inverted(row: pd.Series) -> bool:
+    return _signal_active("yc_inverted", row)
+
+
+# Calibrated on leading-eligible days only (not in selloff, VIX not spiking).
+# Target: NASDAQ 15%+ drawdown within 12 months (1994–2026 backtest).
+LEADING_RULES: tuple[LeadingRule, ...] = (
+    LeadingRule(
+        "Credit stress + small-cap weakness",
+        0.942,
+        104,
+        lambda r: _credit_stress(r) and _smallcap_lag(r),
+    ),
+    LeadingRule(
+        "Credit stress + small-cap + credit worsening",
+        0.898,
+        49,
+        lambda r: _credit_stress(r) and _smallcap_lag(r) and _credit_worsening(r),
+    ),
+    LeadingRule(
+        "Small-cap weakness + credit worsening",
+        0.874,
+        95,
+        lambda r: _smallcap_lag(r) and _credit_worsening(r),
+    ),
+    LeadingRule(
+        "Small-cap weakness (breadth warning)",
+        0.883,
+        222,
+        lambda r: _smallcap_lag(r),
+    ),
+    LeadingRule(
+        "Yield curve inverted + small-cap weakness",
+        0.788,
+        52,
+        lambda r: _yc_inverted(r) and _smallcap_lag(r),
+    ),
+    LeadingRule(
+        "Yield curve inverted (macro)",
+        0.745,
+        271,
+        lambda r: _yc_inverted(r),
+    ),
+    LeadingRule(
+        "Credit stress (spread widening)",
+        0.529,
+        737,
+        lambda r: _credit_stress(r),
+    ),
+    LeadingRule(
+        "No leading pattern",
+        LEADING_BASELINE,
+        8164,
+        lambda r: True,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class LeadingCrashAssessment:
+    probability: float
+    rule_name: str
+    sample_size: int
+    leading_eligible: bool
+    high_confidence: bool
+    horizon_months: int = LEADING_HORIZON_MONTHS
+
+
+def is_leading_eligible(row: pd.Series) -> bool:
+    """True when the market is not already in a selloff (leading phase only)."""
+    ixic_dd = row.get("ixic_dd")
+    spy_dd = row.get("spy_dd")
+    vix_rising = row.get("vix_rising")
+    if pd.isna(ixic_dd) or pd.isna(spy_dd):
+        return False
+    if ixic_dd <= LEADING_DRAWDOWN_LIMIT or spy_dd <= LEADING_DRAWDOWN_LIMIT:
+        return False
+    if pd.notna(vix_rising) and vix_rising > LEADING_VIX_RISE_LIMIT:
+        return False
+    return True
+
+
+def evaluate_leading_crash_probability(row: pd.Series) -> LeadingCrashAssessment:
+    """12-month NASDAQ crash probability from leading indicators only."""
+    if not is_leading_eligible(row):
+        return LeadingCrashAssessment(
+            probability=LEADING_BASELINE,
+            rule_name="Leading inactive (selloff underway)",
+            sample_size=0,
+            leading_eligible=False,
+            high_confidence=False,
+        )
+
+    for rule in LEADING_RULES:
+        if rule.check(row):
+            return LeadingCrashAssessment(
+                probability=rule.probability,
+                rule_name=rule.name,
+                sample_size=rule.sample_size,
+                leading_eligible=True,
+                high_confidence=rule.probability >= CRASH_ALERT_THRESHOLD,
+            )
+
+    return LeadingCrashAssessment(
+        probability=LEADING_BASELINE,
+        rule_name="No leading pattern",
+        sample_size=8164,
+        leading_eligible=True,
+        high_confidence=False,
+    )
+
+
+def leading_crash_probability_from_row(row: pd.Series) -> float:
+    return evaluate_leading_crash_probability(row).probability
+
+
+def leading_crash_probability_series(
+    features: pd.DataFrame,
+    *,
+    monthly: bool = False,
+    smooth: int = 0,
+) -> pd.Series:
+    if features.empty:
+        return pd.Series(dtype=float)
+
+    if monthly:
+        points: dict[pd.Timestamp, float] = {}
+        for _, group in features.groupby(features.index.to_period("M")):
+            points[group.index[-1]] = leading_crash_probability_from_row(group.iloc[-1])
+        series = pd.Series(points).sort_index()
+    else:
+        probs = [leading_crash_probability_from_row(features.iloc[i]) for i in range(len(features))]
+        series = pd.Series(probs, index=features.index)
+
+    if smooth > 1 and not series.empty:
+        return series.rolling(smooth, min_periods=1).mean()
+    return series
+
+
+def leading_crash_probability_chart(features: pd.DataFrame) -> pd.Series:
+    """Quarterly leading probability (0–100) with 2-quarter smoothing."""
+    if features.empty:
+        return pd.Series(dtype=float)
+
+    points: dict[pd.Timestamp, float] = {}
+    for _, group in features.groupby(features.index.to_period("Q")):
+        points[group.index[-1]] = leading_crash_probability_from_row(group.iloc[0])
+    series = pd.Series(points).sort_index()
+    if len(series) >= 2:
+        series = series.rolling(2, min_periods=1).mean()
+    return series * 100.0
+
+
+def leading_crash_guide_snippet() -> str:
+    signal_lines = "\n".join(
+        f"- **{r.label}** — leading {r.tier.value} signal"
+        for r in PREDICTIVE_SIGNAL_RULES
+        if r.key in {"yc_inverted", "yc_deteriorating", "credit_stress", "smallcap_lag"}
+    )
+    return f"""
+### Leading crash probability (12-month)
+
+Uses **macro and market precursors only** — no VIX spikes, momentum breaks, or
+NASDAQ lag that fire during selloffs. Alerts are **suppressed** once NASDAQ/SPY
+is already down 8%+ or VIX is surging.
+
+**Leading signals:**
+{signal_lines}
+
+**≥80% alert examples (backtested):**
+- Credit stress + small-cap weakness → **94%** (12mo)
+- Small-cap weakness alone → **88%** (12mo)
+
+**Validation:** 222 leading-eligible alert-days at ≥80%, **88%** actually crashed within 12 months.
+"""

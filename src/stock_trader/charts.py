@@ -245,7 +245,7 @@ def crash_warning_nasdaq_figure(
         shared_xaxes=True,
         vertical_spacing=0.08,
         row_heights=[0.58, 0.42],
-        subplot_titles=("NASDAQ (start = 100)", "6-month crash probability (quarterly)"),
+        subplot_titles=("NASDAQ (start = 100)", "Leading 12mo crash probability (quarterly)"),
     )
 
     x_min = min(
