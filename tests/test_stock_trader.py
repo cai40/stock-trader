@@ -10,7 +10,13 @@ from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
 from stock_trader.models import Order, OrderSide, Quote
 from stock_trader.portfolio import Portfolio
-from stock_trader.strategies import MovingAverageCrossoverStrategy, get_strategy, list_strategies
+from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.strategies import (
+    MovingAverageCrossoverStrategy,
+    get_strategy,
+    list_strategies,
+)
+from stock_trader.strategies.momentum import AbsoluteMomentumStrategy, TrendFilterStrategy
 from stock_trader.strategies.rsi import RSIStrategy
 from stock_trader.watchlist import label_to_symbol, watchlist_labels
 
@@ -109,6 +115,66 @@ def test_list_strategies_includes_builtin_strategies() -> None:
     assert "ema_crossover" in names
     assert "macd" in names
     assert "bollinger" in names
+    assert "absolute_momentum" in names
+    assert "trend_filter" in names
+
+
+def make_crash_recovery_history() -> pd.DataFrame:
+    """Uptrend, sharp drawdown, then recovery — trend/momentum should exit before the worst."""
+    prices = (
+        [100 + i * 0.5 for i in range(260)]
+        + [230 - i * 2 for i in range(60)]
+        + [110 + i * 0.8 for i in range(120)]
+    )
+    dates = pd.date_range("2022-01-01", periods=len(prices), freq="B")
+    return pd.DataFrame({"Close": prices}, index=dates)
+
+
+def test_trend_filter_generates_buy_on_uptrend_cross() -> None:
+    prices = [90] * 25 + [95, 100, 105, 110, 115, 120, 125, 130]
+    dates = pd.date_range("2024-01-01", periods=len(prices), freq="D")
+    history = pd.DataFrame({"Close": prices}, index=dates)
+    strategy = TrendFilterStrategy(window=20)
+    signals = strategy.generate_signals("TEST", history)
+    assert any(signal.action == "buy" for signal in signals)
+
+
+def test_absolute_momentum_rebalances_monthly() -> None:
+    history = make_crash_recovery_history()
+    strategy = AbsoluteMomentumStrategy(lookback=60)
+    signals = strategy.generate_signals("TEST", history)
+    assert signals
+    assert all(signal.action in {"buy", "sell"} for signal in signals)
+
+
+def test_dual_momentum_equity_curve() -> None:
+    dates = pd.date_range("2022-01-01", periods=300, freq="B")
+    risk = pd.DataFrame({"Close": [100 + i * 0.3 for i in range(300)]}, index=dates)
+    safe = pd.DataFrame({"Close": [80 + i * 0.01 for i in range(300)]}, index=dates)
+
+    equity = dual_momentum_equity(risk, safe, initial_cash=10_000.0, lookback=60)
+    assert len(equity) == len(risk)
+    assert float(equity.iloc[0]) > 0
+
+
+def test_compare_strategies_includes_dual_momentum() -> None:
+    history = make_trending_history()
+    safe_history = pd.DataFrame({"Close": [50.0] * len(history)}, index=history.index)
+    market_data: MarketDataProvider = FakeMarketData(
+        {"TEST": history, "SHY": safe_history}
+    )
+    engine = BacktestEngine(market_data)
+
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["buy_and_hold", "dual_momentum"],
+    )
+
+    assert "dual_momentum" in comparison.curves
+    assert len(comparison.curves["dual_momentum"]) == len(history)
 
 
 def test_backtest_returns_daily_equity_curve() -> None:

@@ -5,6 +5,7 @@ from stock_trader.strategies.bollinger import BollingerBandsStrategy
 from stock_trader.strategies.ema import EMACrossoverStrategy
 from stock_trader.strategies.macd import MACDStrategy
 from stock_trader.strategies.rsi import RSIStrategy
+from stock_trader.strategies.momentum import AbsoluteMomentumStrategy, TrendFilterStrategy
 from stock_trader.strategies.sma import MovingAverageCrossoverStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
@@ -13,6 +14,8 @@ STRATEGIES: dict[str, type[Strategy]] = {
     RSIStrategy.name: RSIStrategy,
     MACDStrategy.name: MACDStrategy,
     BollingerBandsStrategy.name: BollingerBandsStrategy,
+    AbsoluteMomentumStrategy.name: AbsoluteMomentumStrategy,
+    TrendFilterStrategy.name: TrendFilterStrategy,
 }
 
 
@@ -30,11 +33,13 @@ def get_strategy(name: str, **kwargs) -> Strategy:
 
 
 __all__ = [
+    "AbsoluteMomentumStrategy",
     "BollingerBandsStrategy",
     "EMACrossoverStrategy",
     "MACDStrategy",
     "MovingAverageCrossoverStrategy",
     "RSIStrategy",
+    "TrendFilterStrategy",
     "STRATEGIES",
     "Strategy",
     "get_strategy",

@@ -10,6 +10,9 @@ STRATEGY_COLORS: dict[str, str] = {
     "rsi": "#fb923c",
     "macd": "#facc15",
     "bollinger": "#f472b6",
+    "absolute_momentum": "#34d399",
+    "trend_filter": "#22d3ee",
+    "dual_momentum": "#c084fc",
 }
 
 STRATEGY_LABELS: dict[str, str] = {
@@ -19,6 +22,9 @@ STRATEGY_LABELS: dict[str, str] = {
     "rsi": "RSI",
     "macd": "MACD",
     "bollinger": "Bollinger Bands",
+    "absolute_momentum": "Absolute Momentum (12mo)",
+    "trend_filter": "Trend Filter (200 SMA)",
+    "dual_momentum": "Dual Momentum (SPY vs SHY)",
 }
 
 PLOTLY_MOBILE_CONFIG = {
