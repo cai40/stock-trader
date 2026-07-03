@@ -11,7 +11,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.4"
+APP_VERSION = "0.3.5"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -247,8 +247,8 @@ def tab_quote(symbol: str) -> None:
 def tab_backtest(symbol: str) -> None:
     st.subheader("Backtest")
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=DEFAULT_START)
-    end = col2.date_input("End", value=DEFAULT_END)
+    start = col1.date_input("Start", value=DEFAULT_START, key=f"bt_start_{APP_VERSION}")
+    end = col2.date_input("End", value=DEFAULT_END, key=f"bt_end_{APP_VERSION}")
     strategy = st.selectbox("Strategy", list_strategies())
     cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0)
 
