@@ -20,8 +20,11 @@ from stock_trader.crash_warning import (
     risk_level_color,
 )
 from stock_trader.charts import (
+    CRASH_CHART_PLOTLY_CONFIG,
     PLOTLY_MOBILE_CONFIG,
     comparison_figure,
+    crash_chart_data_range,
+    crash_chart_zoom_range,
     crash_warning_nasdaq_figure,
     strategy_label,
     strategy_summary,
@@ -31,7 +34,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.8.3"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -597,8 +600,29 @@ def tab_crash_warning() -> None:
     nasdaq = nasdaq_normalized(panel, start_ts)
     events = crashes_in_range(start_ts, end_ts)
 
-    overlay = crash_warning_nasdaq_figure(nasdaq, score, events)
-    st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+    chart_range_key = f"{start_ts.date()}_{end_ts.date()}"
+    if st.session_state.get("crash_chart_range_key") != chart_range_key:
+        st.session_state["crash_chart_range_key"] = chart_range_key
+        st.session_state.pop("crash_chart_xrange", None)
+
+    full_start, full_end = crash_chart_data_range(nasdaq, score)
+    current_xrange: tuple[pd.Timestamp, pd.Timestamp] | None = st.session_state.get("crash_chart_xrange")
+
+    z1, z2, z3 = st.columns(3)
+    if z1.button("Zoom in", key=f"crash_zoom_in_{APP_VERSION}", use_container_width=True):
+        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
+            full_start, full_end, current_xrange, factor=0.75
+        )
+    if z2.button("Zoom out", key=f"crash_zoom_out_{APP_VERSION}", use_container_width=True):
+        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
+            full_start, full_end, current_xrange, factor=1.33
+        )
+    if z3.button("Reset zoom", key=f"crash_zoom_reset_{APP_VERSION}", use_container_width=True):
+        st.session_state.pop("crash_chart_xrange", None)
+
+    current_xrange = st.session_state.get("crash_chart_xrange")
+    overlay = crash_warning_nasdaq_figure(nasdaq, score, events, x_range=current_xrange)
+    st.plotly_chart(overlay, use_container_width=True, config=CRASH_CHART_PLOTLY_CONFIG)
     st.caption(
         f"Red line = {CRASH_ALERT_THRESHOLD:.0%} leading alert · "
         "Pre-2007 chart uses small-cap/yield proxy (no credit ETF data) · "

@@ -139,6 +139,8 @@ HISTORICAL_CRASHES: tuple[CrashEvent, ...] = (
     CrashEvent("2018 Q4 selloff", "2018-09-20", "2018-12-24"),
     CrashEvent("COVID crash", "2020-02-19", "2020-03-23"),
     CrashEvent("2022 bear market", "2022-01-03", "2022-10-12"),
+    CrashEvent("2025 March selloff", "2025-02-19", "2025-03-31"),
+    CrashEvent("2026 March selloff", "2026-01-28", "2026-03-30"),
 )
 
 

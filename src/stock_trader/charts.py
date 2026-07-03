@@ -86,6 +86,14 @@ PLOTLY_MOBILE_CONFIG = {
     "doubleClick": False,
 }
 
+CRASH_CHART_PLOTLY_CONFIG = {
+    "scrollZoom": True,
+    "displayModeBar": True,
+    "displaylogo": False,
+    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    "doubleClick": "reset",
+}
+
 
 def strategy_label(name: str) -> str:
     return STRATEGY_LABELS.get(name, name.replace("_", " ").title())
@@ -160,7 +168,52 @@ CRASH_LABEL_SHORT: dict[str, str] = {
     "2018 Q4 selloff": "2018",
     "COVID crash": "COVID",
     "2022 bear market": "2022",
+    "2025 March selloff": "Mar'25",
+    "2026 March selloff": "Mar'26",
 }
+
+
+def crash_chart_data_range(
+    nasdaq: pd.Series,
+    composite_score: pd.Series,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Full timeline span for the crash warning chart."""
+    x_min = min(
+        nasdaq.index.min() if not nasdaq.empty else pd.Timestamp.max,
+        composite_score.index.min() if not composite_score.empty else pd.Timestamp.max,
+    )
+    x_max = max(
+        nasdaq.index.max() if not nasdaq.empty else pd.Timestamp.min,
+        composite_score.index.max() if not composite_score.empty else pd.Timestamp.min,
+    )
+    return x_min, x_max
+
+
+def crash_chart_zoom_range(
+    full_start: pd.Timestamp,
+    full_end: pd.Timestamp,
+    current: tuple[pd.Timestamp, pd.Timestamp] | None,
+    *,
+    factor: float,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Zoom the visible x-axis by *factor* (<1 zoom in, >1 zoom out), clamped to full span."""
+    view_start, view_end = current if current else (full_start, full_end)
+    span = view_end - view_start
+    center = view_start + span / 2
+    new_span = span * factor
+    new_start = center - new_span / 2
+    new_end = center + new_span / 2
+    if new_start < full_start:
+        new_end += full_start - new_start
+        new_start = full_start
+    if new_end > full_end:
+        new_start -= new_end - full_end
+        new_end = full_end
+    new_start = max(new_start, full_start)
+    new_end = min(new_end, full_end)
+    if new_start >= new_end:
+        return full_start, full_end
+    return new_start, new_end
 
 
 def _crash_chart_span(
@@ -258,6 +311,8 @@ def crash_warning_nasdaq_figure(
     nasdaq: pd.Series,
     composite_score: pd.Series,
     crashes: list,
+    *,
+    x_range: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> go.Figure:
     """Stacked NASDAQ + crash score charts (mobile-friendly, shared timeline)."""
     from plotly.subplots import make_subplots
@@ -274,14 +329,7 @@ def crash_warning_nasdaq_figure(
         subplot_titles=("NASDAQ (start = 100)", "Leading 12mo crash probability (quarterly)"),
     )
 
-    x_min = min(
-        nasdaq.index.min() if not nasdaq.empty else pd.Timestamp.max,
-        composite_score.index.min() if not composite_score.empty else pd.Timestamp.max,
-    )
-    x_max = max(
-        nasdaq.index.max() if not nasdaq.empty else pd.Timestamp.min,
-        composite_score.index.max() if not composite_score.empty else pd.Timestamp.min,
-    )
+    x_min, x_max = crash_chart_data_range(nasdaq, composite_score)
 
     if not nasdaq.empty:
         fig.add_trace(
@@ -329,19 +377,37 @@ def crash_warning_nasdaq_figure(
 
     prob_max = float(composite_score.max()) if not composite_score.empty else 100.0
 
+    view_start = x_range[0] if x_range else x_min
+    view_end = x_range[1] if x_range else x_max
+
     fig.update_layout(
         template="plotly_dark",
         height=560,
         margin=dict(l=44, r=12, t=36, b=40),
         hovermode="x unified",
-        dragmode=False,
+        dragmode="pan",
     )
-    fig.update_xaxes(type="date", fixedrange=True, showticklabels=False, row=1, col=1)
-    fig.update_xaxes(type="date", fixedrange=True, title_text="", row=2, col=1)
-    fig.update_yaxes(title_text="", fixedrange=True, row=1, col=1)
+    axis_range = [view_start, view_end]
+    fig.update_xaxes(
+        type="date",
+        range=axis_range,
+        fixedrange=False,
+        showticklabels=False,
+        row=1,
+        col=1,
+    )
+    fig.update_xaxes(
+        type="date",
+        range=axis_range,
+        fixedrange=False,
+        title_text="",
+        row=2,
+        col=1,
+    )
+    fig.update_yaxes(title_text="", fixedrange=False, row=1, col=1)
     fig.update_yaxes(
         title_text="",
-        fixedrange=True,
+        fixedrange=False,
         range=[0, max(100.0, prob_max * 1.05)],
         row=2,
         col=1,

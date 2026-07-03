@@ -24,7 +24,12 @@ from stock_trader.leading_crash import (
     leading_crash_probability_chart,
     leading_crash_probability_series,
 )
-from stock_trader.charts import crash_warning_nasdaq_figure
+from stock_trader.charts import (
+    CRASH_LABEL_SHORT,
+    crash_chart_data_range,
+    crash_chart_zoom_range,
+    crash_warning_nasdaq_figure,
+)
 
 
 class FakeMarketData:
@@ -161,6 +166,42 @@ def test_crashes_in_range_includes_partial_overlap() -> None:
     names = {e.name for e in events}
     assert "Global Financial Crisis" in names
     assert "2011 debt crisis" in names
+
+
+def test_historical_crashes_include_2025_and_2026_march() -> None:
+    names = {e.name for e in HISTORICAL_CRASHES}
+    assert "2025 March selloff" in names
+    assert "2026 March selloff" in names
+    assert CRASH_LABEL_SHORT["2025 March selloff"] == "Mar'25"
+    assert CRASH_LABEL_SHORT["2026 March selloff"] == "Mar'26"
+
+
+def test_crashes_in_range_includes_2025_march() -> None:
+    events = crashes_in_range(pd.Timestamp("2025-01-01"), pd.Timestamp("2025-12-31"))
+    names = {e.name for e in events}
+    assert "2025 March selloff" in names
+
+
+def test_crash_chart_zoom_range() -> None:
+    full_start = pd.Timestamp("2020-01-01")
+    full_end = pd.Timestamp("2025-01-01")
+    current = (pd.Timestamp("2022-01-01"), pd.Timestamp("2024-01-01"))
+    zoomed_in = crash_chart_zoom_range(full_start, full_end, current, factor=0.5)
+    assert zoomed_in[1] - zoomed_in[0] < current[1] - current[0]
+    zoomed_out = crash_chart_zoom_range(full_start, full_end, current, factor=2.0)
+    assert zoomed_out[1] - zoomed_out[0] > current[1] - current[0]
+
+
+def test_crash_warning_nasdaq_figure_respects_x_range() -> None:
+    panel = _rising_panel()
+    features = compute_crash_features(panel).dropna()
+    score = leading_crash_probability_chart(features)
+    nasdaq = nasdaq_normalized(panel, panel.index[0])
+    events = crashes_in_range(panel.index[0], panel.index[-1])
+    x_range = (panel.index[50], panel.index[150])
+    fig = crash_warning_nasdaq_figure(nasdaq, score, events, x_range=x_range)
+    assert fig.layout.xaxis.range[0] == x_range[0]
+    assert fig.layout.xaxis2.range[0] == x_range[0]
 
 
 def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:
