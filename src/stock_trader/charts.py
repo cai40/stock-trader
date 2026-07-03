@@ -28,11 +28,18 @@ STRATEGY_LABELS: dict[str, str] = {
 }
 
 PLOTLY_MOBILE_CONFIG = {
-    "scrollZoom": True,
+    "scrollZoom": False,
     "displayModeBar": True,
     "displaylogo": False,
-    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-    "doubleClick": "reset",
+    "modeBarButtonsToRemove": [
+        "lasso2d",
+        "select2d",
+        "zoom2d",
+        "zoomIn2d",
+        "zoomOut2d",
+        "autoScale2d",
+    ],
+    "doubleClick": False,
 }
 
 
@@ -82,14 +89,14 @@ def comparison_figure(
         margin=dict(l=10, r=10, t=50, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         hovermode="x unified",
-        dragmode="zoom",
+        dragmode=False,
         xaxis=dict(
             title="Date",
             rangeslider=dict(visible=True, thickness=0.08),
             type="date",
-            fixedrange=False,
+            fixedrange=True,
         ),
-        yaxis=dict(title="Account value ($)", fixedrange=False, tickformat="$,.0f"),
+        yaxis=dict(title="Account value ($)", fixedrange=True, tickformat="$,.0f"),
     )
 
     return fig

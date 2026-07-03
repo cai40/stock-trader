@@ -11,7 +11,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.3"
+APP_VERSION = "0.3.4"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -199,8 +199,9 @@ def price_chart(symbol: str, start: str, end: str, trades: list[Trade]) -> None:
         margin=dict(l=10, r=10, t=30, b=10),
         title=f"{symbol} price & trades",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis_title="Date",
-        yaxis_title="Price ($)",
+        dragmode=False,
+        xaxis=dict(title="Date", fixedrange=True),
+        yaxis=dict(title="Price ($)", fixedrange=True),
     )
     st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
 
@@ -283,7 +284,7 @@ def tab_backtest(symbol: str) -> None:
 def tab_compare(symbol: str) -> None:
     st.subheader("Compare strategies")
     st.caption(
-        "Pinch to zoom · drag to pan · use the range slider below the chart. "
+        "Use the range slider below the chart to change the visible period. "
         "In strong bull markets (e.g. 2023), buy-and-hold often wins on total return. "
         "Trend filter, absolute momentum, and dual momentum tend to beat buy-and-hold "
         "when markets crash or chop — try 2007–2012 on SPY."
