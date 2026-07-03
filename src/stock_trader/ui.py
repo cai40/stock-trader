@@ -7,6 +7,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
+from stock_trader.crash_warning import (
+    RISK_LABELS,
+    composite_score_series,
+    load_crash_panel,
+    risk_level_color,
+)
 from stock_trader.charts import (
     PLOTLY_MOBILE_CONFIG,
     comparison_figure,
@@ -18,7 +24,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -407,6 +413,148 @@ def tab_compare(symbol: str) -> None:
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
 
+def tab_crash_warning() -> None:
+    st.subheader("Crash early warning")
+    st.caption(
+        "Composite score from SPY, VIX, yield curve, and credit-market indicators. "
+        "Macro signals lead by months; coincident signals fire during drawdowns. "
+        "Educational research tool — not a trading signal."
+    )
+
+    col1, col2 = st.columns(2)
+    start = col1.date_input(
+        "History start",
+        value=pd.Timestamp("2018-01-01"),
+        key=f"cw_start_{APP_VERSION}",
+    )
+    end = col2.date_input(
+        "As of",
+        value=DEFAULT_END,
+        key=f"cw_end_{APP_VERSION}",
+    )
+
+    if st.button("Refresh crash dashboard", type="primary", use_container_width=True):
+        if start >= end:
+            st.error("End date must be after start date.")
+            return
+
+        with st.spinner("Loading macro panel (SPY, VIX, yields, credit)..."):
+            try:
+                panel, features, assessment = load_crash_panel(
+                    start.isoformat(),
+                    end.isoformat(),
+                    MARKET_DATA,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+
+        st.session_state["crash_assessment"] = assessment
+        st.session_state["crash_features"] = features
+        st.session_state["crash_panel"] = panel
+
+    assessment: object = st.session_state.get("crash_assessment")
+    features: object = st.session_state.get("crash_features")
+    if assessment is None or features is None:
+        st.info("Press **Refresh crash dashboard** to load the latest readings.")
+        return
+
+    color = risk_level_color(assessment.risk_level)
+    st.markdown(
+        f"""
+        <div class="metric-card" style="border-color:{color};">
+            <div style="color:#94a3b8; font-size:0.9rem;">Risk level · {assessment.as_of.strftime("%b %d, %Y")}</div>
+            <div style="font-size:2rem; font-weight:700; color:{color};">
+                {RISK_LABELS[assessment.risk_level]}
+            </div>
+            <div style="color:#cbd5e1; margin-top:0.5rem;">{assessment.action}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if assessment.fake_panic:
+        st.warning(f"**Fake panic filter:** {assessment.fake_panic_reason}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Composite score", f"{assessment.composite_score:.1f}")
+    m2.metric("Active signals", f"{assessment.active_count}/9")
+    m3.metric("Macro / market / coincident", f"{assessment.macro_count}/{assessment.market_count}/{assessment.coincident_count}")
+    row = features.iloc[-1]
+    m4.metric("VIX", f"{row.get('vix', float('nan')):.1f}" if pd.notna(row.get("vix")) else "—")
+
+    rows = []
+    for status in assessment.signals:
+        rows.append(
+            {
+                "Tier": status.rule.tier.value.title(),
+                "Signal": status.rule.label,
+                "Active": "⚠️ Yes" if status.active else "—",
+                "Value": status.display_value,
+                "Description": status.rule.description,
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    score = composite_score_series(features)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=score.index,
+            y=score.values,
+            mode="lines",
+            name="Composite score",
+            line=dict(color="#60a5fa", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(96,165,250,0.15)",
+        )
+    )
+    fig.add_hline(y=4, line_dash="dot", line_color="#fb923c", annotation_text="Defensive")
+    fig.add_hline(y=6, line_dash="dot", line_color="#f87171", annotation_text="Critical")
+    fig.update_layout(
+        template="plotly_dark",
+        title="Composite crash warning score over time",
+        height=360,
+        margin=dict(l=10, r=10, t=50, b=10),
+        dragmode=False,
+        xaxis=dict(title="Date", fixedrange=True),
+        yaxis=dict(title="Score", fixedrange=True),
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+
+    if "vix" in features.columns and "vol_20d" in features.columns:
+        vix_fig = go.Figure()
+        vix_fig.add_trace(
+            go.Scatter(
+                x=features.index,
+                y=features["vix"],
+                mode="lines",
+                name="VIX",
+                line=dict(color="#f87171", width=2),
+            )
+        )
+        vix_fig.add_trace(
+            go.Scatter(
+                x=features.index,
+                y=features["vol_20d"] * 100,
+                mode="lines",
+                name="Realized vol (%)",
+                line=dict(color="#60a5fa", width=2),
+            )
+        )
+        vix_fig.update_layout(
+            template="plotly_dark",
+            title="VIX vs 20-day realized volatility",
+            height=300,
+            margin=dict(l=10, r=10, t=50, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            dragmode=False,
+            xaxis=dict(fixedrange=True),
+            yaxis=dict(title="Level", fixedrange=True),
+        )
+        st.plotly_chart(vix_fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+
+
 def tab_paper_trade() -> None:
     st.subheader("Paper trade")
     st.caption("Shared portfolio — one cash pool across all symbols")
@@ -454,8 +602,8 @@ def main() -> None:
 
     render_strategy_guide_button()
 
-    quote_tab, backtest_tab, compare_tab, paper_tab = st.tabs(
-        ["Quote", "Backtest", "Compare", "Paper trade"]
+    quote_tab, backtest_tab, compare_tab, crash_tab, paper_tab = st.tabs(
+        ["Quote", "Backtest", "Compare", "Crash warning", "Paper trade"]
     )
 
     with quote_tab:
@@ -464,6 +612,8 @@ def main() -> None:
         tab_backtest(symbol)
     with compare_tab:
         tab_compare(symbol)
+    with crash_tab:
+        tab_crash_warning()
     with paper_tab:
         tab_paper_trade()
 

@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import pandas as pd
+import pytest
+
+from stock_trader.crash_warning import (
+    RiskLevel,
+    assess_crash_risk,
+    composite_score_series,
+    compute_crash_features,
+    load_crash_panel,
+)
+
+
+class FakeMarketData:
+    def __init__(self, panel: pd.DataFrame) -> None:
+        self.panel = panel
+
+    def get_history(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
+        ticker_map = {
+            "SPY": "SPY",
+            "^VIX": "VIX",
+            "^TNX": "TNX",
+            "^IRX": "IRX",
+            "HYG": "HYG",
+            "LQD": "LQD",
+            "IWM": "IWM",
+        }
+        name = ticker_map.get(symbol, symbol)
+        sub = self.panel.loc[start:end]
+        return pd.DataFrame({"Close": sub[name]})
+
+
+def _rising_panel(rows: int = 400) -> pd.DataFrame:
+    dates = pd.date_range("2018-01-01", periods=rows, freq="B")
+    return pd.DataFrame(
+        {
+            "SPY": [100 + i * 0.2 for i in range(rows)],
+            "VIX": [14 + (i % 5) for i in range(rows)],
+            "TNX": [3.0 + i * 0.001 for i in range(rows)],
+            "IRX": [1.0 + i * 0.0005 for i in range(rows)],
+            "HYG": [75 + i * 0.05 for i in range(rows)],
+            "LQD": [100 + i * 0.04 for i in range(rows)],
+            "IWM": [90 + i * 0.15 for i in range(rows)],
+        },
+        index=dates,
+    )
+
+
+def _stress_panel(rows: int = 400) -> pd.DataFrame:
+    dates = pd.date_range("2018-01-01", periods=rows, freq="B")
+    spy = [200.0] * 300 + [170.0 - i * 0.3 for i in range(100)]
+    return pd.DataFrame(
+        {
+            "SPY": spy,
+            "VIX": [15.0] * 300 + [35.0 + i * 0.1 for i in range(100)],
+            "TNX": [2.0] * 200 + [4.0] * 100 + [1.5] * 100,
+            "IRX": [4.5] * 200 + [4.0] * 100 + [4.8] * 100,
+            "HYG": [80.0] * 300 + [65.0 - i * 0.05 for i in range(100)],
+            "LQD": [110.0] * 300 + [112.0 + i * 0.02 for i in range(100)],
+            "IWM": [100.0] * 300 + [75.0 - i * 0.2 for i in range(100)],
+        },
+        index=dates,
+    )
+
+
+def test_compute_crash_features_columns() -> None:
+    panel = _rising_panel()
+    features = compute_crash_features(panel)
+    assert "vix_rvol_spread" in features.columns
+    assert "yc_inverted" in features.columns
+    assert len(features) == len(panel)
+
+
+def test_assess_crash_risk_risk_on_in_calm_market() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    assessment = assess_crash_risk(features)
+    assert assessment.risk_level is RiskLevel.RISK_ON
+    assert assessment.active_count < 3
+
+
+def test_assess_crash_risk_elevated_in_stress_market() -> None:
+    features = compute_crash_features(_stress_panel()).dropna()
+    assessment = assess_crash_risk(features)
+    assert assessment.active_count >= 3
+    assert assessment.risk_level in {RiskLevel.CAUTION, RiskLevel.DEFENSIVE, RiskLevel.CRITICAL}
+
+
+def test_composite_score_series_length() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    scores = composite_score_series(features)
+    assert len(scores) == len(features)
+    assert float(scores.iloc[-1]) >= 0
+
+
+def test_load_crash_panel_with_fake_data() -> None:
+    panel = _rising_panel()
+    _, features, assessment = load_crash_panel(
+        "2019-01-01",
+        "2019-12-31",
+        FakeMarketData(panel),
+    )
+    assert not features.empty
+    assert assessment.as_of == features.index[-1]
+
+
+def test_assess_crash_risk_empty_features_raises() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        assess_crash_risk(pd.DataFrame())
