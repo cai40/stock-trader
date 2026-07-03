@@ -291,16 +291,16 @@ def tab_compare(symbol: str) -> None:
     )
 
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=DEFAULT_START, key="cmp_start")
-    end = col2.date_input("End", value=DEFAULT_END, key="cmp_end")
-    cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key="cmp_cash")
+    start = col1.date_input("Start", value=DEFAULT_START, key=f"cmp_start_{APP_VERSION}")
+    end = col2.date_input("End", value=DEFAULT_END, key=f"cmp_end_{APP_VERSION}")
+    cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key=f"cmp_cash_{APP_VERSION}")
 
     selected = st.multiselect(
         "Strategies to plot",
         options=COMPARE_OPTIONS,
         default=COMPARE_OPTIONS,
         format_func=strategy_label,
-        key="cmp_strategies",
+        key=f"cmp_strategies_{APP_VERSION}",
     )
 
     if st.button("Run comparison", type="primary", use_container_width=True):
@@ -356,8 +356,8 @@ def tab_paper_trade() -> None:
     st.caption("Shared portfolio — one cash pool across all symbols")
     symbols = pick_symbols_multiselect("pt_symbols")
     col1, col2 = st.columns(2)
-    start = col1.date_input("Start", value=DEFAULT_START, key="pt_start")
-    end = col2.date_input("End", value=DEFAULT_END, key="pt_end")
+    start = col1.date_input("Start", value=DEFAULT_START, key=f"pt_start_{APP_VERSION}")
+    end = col2.date_input("End", value=DEFAULT_END, key=f"pt_end_{APP_VERSION}")
     strategy = st.selectbox("Strategy", list_strategies(), key="pt_strategy")
     cash = st.number_input("Starting cash ($)", min_value=100.0, value=10_000.0, step=500.0, key="pt_cash")
 
