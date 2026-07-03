@@ -7,9 +7,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
+from stock_trader.crash_backtest import backtest_summary_markdown, run_crash_score_backtest
 from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
+    SignalTier,
     composite_score_chart,
     crash_score_guide_markdown,
     crashes_in_range,
@@ -29,7 +31,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.6"
+APP_VERSION = "0.6.0"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -424,11 +426,19 @@ def tab_compare(symbol: str) -> None:
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_crash_backtest(start: str, end: str) -> object:
+    panel, features, _ = load_crash_panel(start, end, MARKET_DATA)
+    nasdaq = panel["IXIC"].reindex(features.index).ffill()
+    return run_crash_score_backtest(features, nasdaq)
+
+
 def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
-        "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
-        "Score is quarterly with 2-quarter smoothing. Red bands = historical crashes (see table). "
+        "Predictive NASDAQ crash score from leading macro, market, and NASDAQ-specific signals. "
+        "Lag indicators (drawdown, below SMA) are shown separately as live stress. "
+        "Score is quarterly with 2-quarter smoothing."
     )
 
     if st.button(
@@ -521,23 +531,37 @@ def tab_crash_warning() -> None:
         st.warning(f"**Fake panic filter:** {assessment.fake_panic_reason}")
 
     m1, m2 = st.columns(2)
-    m1.metric("Composite score", f"{assessment.composite_score:.1f}")
-    m2.metric("Active signals", f"{assessment.active_count}/9")
+    m1.metric("Predictive score", f"{assessment.composite_score:.1f}")
+    m2.metric("Predictive signals", f"{assessment.active_count}/9")
     m3, m4 = st.columns(2)
-    m3.metric("Macro / market / coinc.", f"{assessment.macro_count}/{assessment.market_count}/{assessment.coincident_count}")
+    m3.metric(
+        "Macro / market / NASDAQ",
+        f"{assessment.macro_count}/{assessment.market_count}/{assessment.nasdaq_count}",
+    )
     row = features.iloc[-1]
-    m4.metric("VIX", f"{row.get('vix', float('nan')):.1f}" if pd.notna(row.get("vix")) else "—")
+    m4.metric("Live stress", f"{assessment.stress_score:.0f}/4")
+    m5, m6 = st.columns(2)
+    m5.metric("VIX", f"{row.get('vix', float('nan')):.1f}" if pd.notna(row.get("vix")) else "—")
+    m6.metric("Coincident on", f"{assessment.coincident_count}/4")
 
-    rows = []
+    predictive_rows = []
+    stress_rows = []
     for status in assessment.signals:
-        rows.append(
-            {
-                "Signal": status.rule.label,
-                "On": "Yes" if status.active else "—",
-                "Value": status.display_value,
-            }
-        )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        entry = {
+            "Signal": status.rule.label,
+            "On": "Yes" if status.active else "—",
+            "Value": status.display_value,
+        }
+        if status.rule.tier is SignalTier.COINCIDENT:
+            stress_rows.append(entry)
+        else:
+            predictive_rows.append(entry)
+
+    st.markdown("**Predictive signals** (count toward score)")
+    st.dataframe(pd.DataFrame(predictive_rows), use_container_width=True, hide_index=True)
+    if stress_rows:
+        st.markdown("**Live stress** (during selloffs — not in score)")
+        st.dataframe(pd.DataFrame(stress_rows), use_container_width=True, hide_index=True)
 
     start_ts = pd.Timestamp(st.session_state.get("crash_start", start))
     end_ts = pd.Timestamp(st.session_state.get("crash_end", end))
@@ -555,6 +579,25 @@ def tab_crash_warning() -> None:
         ]
         st.caption("Historical crash episodes in selected range")
         st.dataframe(pd.DataFrame(event_rows), use_container_width=True, hide_index=True)
+
+    with st.expander("Backtest validation (NASDAQ 15%+ drawdowns)"):
+        st.caption(
+            "Historical accuracy of the predictive score — does a high score precede NASDAQ crashes?"
+        )
+        try:
+            bt = fetch_crash_backtest(
+                st.session_state.get("crash_start", start.isoformat()),
+                st.session_state.get("crash_end", end.isoformat()),
+            )
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("AUC 3mo", f"{bt.auc_3m:.2f}")
+            c2.metric("AUC 6mo", f"{bt.auc_6m:.2f}")
+            c3.metric("AUC 12mo", f"{bt.auc_12m:.2f}")
+            edge = bt.crash_prob_at_defensive - bt.crash_prob_baseline
+            c4.metric("Crash edge @ ≥6", f"{edge:+.1%}")
+            st.markdown(backtest_summary_markdown(bt))
+        except ValueError as exc:
+            st.warning(str(exc))
 
     if "vix" in features.columns and "vol_20d" in features.columns:
         vix_fig = go.Figure()

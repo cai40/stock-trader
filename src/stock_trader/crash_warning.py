@@ -23,11 +23,15 @@ DEFAULT_CRASH_HISTORY_START = "1993-01-01"
 
 LOOKBACK_ZSCORE = 252
 VOL_WINDOW = 20
-SCORE_SMOOTH_WINDOW = 20
 MOMENTUM_LONG = 252
 MOMENTUM_SHORT = 21
 SMALLCAP_LAG_WINDOW = 63
 CREDIT_WINDOW = 63
+YC_DETERIORATION_WINDOW = 126
+VIX_RISING_WINDOW = 21
+
+DEFENSIVE_SCORE_THRESHOLD = 6.0
+CRITICAL_SCORE_THRESHOLD = 9.0
 
 
 class RiskLevel(str, Enum):
@@ -40,7 +44,16 @@ class RiskLevel(str, Enum):
 class SignalTier(str, Enum):
     MACRO = "macro"
     MARKET = "market"
+    NASDAQ = "nasdaq"
     COINCIDENT = "coincident"
+
+
+TIER_WEIGHTS: dict[SignalTier, float] = {
+    SignalTier.MACRO: 3.0,
+    SignalTier.MARKET: 2.0,
+    SignalTier.NASDAQ: 2.5,
+    SignalTier.COINCIDENT: 0.0,
+}
 
 
 RISK_LABELS: dict[RiskLevel, str] = {
@@ -70,50 +83,60 @@ def risk_level_color(level: RiskLevel) -> str:
 
 
 def crash_score_guide_markdown() -> str:
-    """Detailed explanation of the composite crash score for the UI guide."""
-    signal_lines = "\n".join(
+    """Detailed explanation of the predictive crash score for the UI guide."""
+    predictive_lines = "\n".join(
         f"- **{rule.label}** ({rule.tier.value}) — {rule.description}"
-        for rule in SIGNAL_RULES
+        for rule in PREDICTIVE_SIGNAL_RULES
+    )
+    coincident_lines = "\n".join(
+        f"- **{rule.label}** — {rule.description}" for rule in COINCIDENT_SIGNAL_RULES
     )
     return f"""
 ### What is the crash score?
 
-A **composite warning score** from 0 to ~13.5 that counts how many recession/crash
-indicators are active at once. It is **not** a prediction of a crash — it measures
-**how many stress signals are flashing** across macro, market, and price data.
+A **predictive** NASDAQ crash score (0–~21) built from **leading** macro, market, and
+NASDAQ-specific signals. It deliberately **excludes** lagging indicators (drawdowns,
+below-trend price) so the score rises **before** crashes rather than after they start.
 
 Data sources: **SPY**, **NASDAQ (^IXIC)**, **VIX**, **Treasury yields** (^TNX / ^IRX),
 **HYG** (high-yield credit), **LQD** (investment-grade credit), **IWM** (small caps).
 
 ---
 
-### The 9 signals
+### Predictive signals (9)
 
-{signal_lines}
+{predictive_lines}
 
 **Tiers:**
-- **Macro** — slow-moving, can lead recessions by 6–18 months (yield curve)
-- **Market** — medium-term stress (credit, VIX, breadth, momentum)
-- **Coincident** — fires during selloffs (drawdown, vol spike, below 200-day SMA)
+- **Macro** — slow-moving recession precursors (yield curve)
+- **Market** — medium-term stress (credit, VIX build-up, momentum)
+- **NASDAQ** — tech/growth weakness specific to NASDAQ crashes
+
+---
+
+### Live stress (not in score)
+
+These fire **during** selloffs and are shown separately — they do **not** increase the
+predictive score:
+
+{coincident_lines}
 
 ---
 
 ### How the number is calculated
 
-Each active signal adds weighted points:
-
 | Tier | Points per active signal |
 |------|--------------------------|
-| Macro | **2.0** |
-| Market | **1.5** |
-| Coincident | **1.0** |
+| Macro | **3.0** |
+| Market | **2.0** |
+| NASDAQ | **2.5** |
 
-**Formula:** `score = (macro × 2) + (market × 1.5) + (coincident × 1)`
+**Formula:** `score = (macro × 3) + (market × 2) + (nasdaq × 2.5)`
 
-Maximum possible score ≈ **13.5** (all 9 signals on).
+Maximum possible score ≈ **21** (all 9 predictive signals on).
 
 The **header metric** uses today's reading. The **chart** uses a **quarterly**
-score with **2-quarter smoothing** so long-term trends are readable on mobile.
+score with **2-quarter smoothing** for mobile readability.
 
 ---
 
@@ -121,27 +144,28 @@ score with **2-quarter smoothing** so long-term trends are readable on mobile.
 
 | Level | Typical trigger | Suggested posture |
 |-------|-----------------|-------------------|
-| **Risk-on** | 0–1 signals | Normal exposure |
-| **Caution** | 2–3 signals | Trim equity 25–50% |
-| **Defensive** | 4+ signals, or macro + 2 market | Rotate to bonds/cash |
-| **Critical** | 2+ coincident, or 5+ total | Maximum defense |
+| **Risk-on** | score < 4 | Normal exposure |
+| **Caution** | 4–5 | Trim equity 25–50% |
+| **Defensive** | 6–8 | Rotate to bonds/cash |
+| **Critical** | ≥ 9 | Maximum defense |
 
-Chart reference lines: **orange = 4** (defensive), **red = 6** (critical).
+Chart reference lines: **orange = 6** (defensive), **red = 9** (critical).
 
 ---
 
 ### Fake panic filter
 
-If VIX is elevated but **credit markets are calm** and SPY is **above its 200-day
+If VIX is rising but **credit markets are calm** and SPY is **above its 200-day
 average**, the dashboard may downgrade the risk level — headline fear without
-systemic stress (e.g. Aug 2024 yen unwind).
+systemic stress.
 
 ---
 
 ### Limitations
 
-- No single indicator predicts crashes reliably; false alarms are common
+- No score predicts every crash; false alarms still happen
 - Credit ETF data (HYG/LQD) only exists from ~2007 onward
+- Backtest stats in the dashboard show historical accuracy — not a guarantee
 - Educational research tool — **not financial advice**
 """
 
@@ -171,12 +195,18 @@ class SignalRule:
     description: str
 
 
-SIGNAL_RULES: tuple[SignalRule, ...] = (
+PREDICTIVE_SIGNAL_RULES: tuple[SignalRule, ...] = (
     SignalRule(
         "yc_inverted",
         "Yield curve inverted",
         SignalTier.MACRO,
         "10Y yield below 3-month T-bill — recession precursor (12–18 month lead).",
+    ),
+    SignalRule(
+        "yc_deteriorating",
+        "Yield curve flattening",
+        SignalTier.MACRO,
+        "10Y–3M spread fell >0.75pp over 6 months — inversion approaching.",
     ),
     SignalRule(
         "credit_stress",
@@ -194,39 +224,62 @@ SIGNAL_RULES: tuple[SignalRule, ...] = (
         "vix_rvol_spread",
         "VIX − realized vol spread",
         SignalTier.MARKET,
-        "Implied fear exceeds realized volatility by 10+ points — pre-crash stress.",
+        "Implied fear exceeds realized volatility by 10+ points — stress building.",
     ),
     SignalRule(
-        "vix_elevated",
-        "VIX elevated",
+        "vix_rising",
+        "VIX rising fast",
         SignalTier.MARKET,
-        "VIX z-score above 1.5 vs its 1-year average.",
+        "VIX up 30%+ over 21 days — fear building before price breaks.",
     ),
     SignalRule(
         "momentum_12_1",
-        "12−1 momentum negative",
+        "SPY 12−1 momentum negative",
         SignalTier.MARKET,
-        "12-month return minus 1-month return below zero — momentum deterioration.",
+        "Broad-market 12-month minus 1-month return below zero.",
+    ),
+    SignalRule(
+        "ixic_momentum_12_1",
+        "NASDAQ 12−1 momentum negative",
+        SignalTier.NASDAQ,
+        "NASDAQ 12-month minus 1-month return below zero — growth deterioration.",
+    ),
+    SignalRule(
+        "ixic_lag",
+        "NASDAQ lagging SPY",
+        SignalTier.NASDAQ,
+        "NASDAQ trailing SPY by more than 5% over 3 months — tech weakness.",
+    ),
+)
+
+COINCIDENT_SIGNAL_RULES: tuple[SignalRule, ...] = (
+    SignalRule(
+        "vix_elevated",
+        "VIX elevated",
+        SignalTier.COINCIDENT,
+        "VIX z-score above 1.5 vs its 1-year average — live fear gauge.",
     ),
     SignalRule(
         "below_sma200",
         "Below 200-day SMA",
         SignalTier.COINCIDENT,
-        "SPY price below its 200-day moving average — trend break.",
+        "SPY price below its 200-day moving average — trend already broken.",
     ),
     SignalRule(
         "drawdown_10",
         "Drawdown > 10%",
         SignalTier.COINCIDENT,
-        "SPY is more than 10% below its 252-day high.",
+        "SPY is more than 10% below its 252-day high — selloff underway.",
     ),
     SignalRule(
         "vol_spike",
         "Realized vol spike",
         SignalTier.COINCIDENT,
-        "20-day annualized volatility above 25%.",
+        "20-day annualized volatility above 25% — crash already in progress.",
     ),
 )
+
+SIGNAL_RULES: tuple[SignalRule, ...] = PREDICTIVE_SIGNAL_RULES + COINCIDENT_SIGNAL_RULES
 
 
 @dataclass
@@ -244,12 +297,14 @@ class CrashAssessment:
     active_count: int
     macro_count: int
     market_count: int
+    nasdaq_count: int
     coincident_count: int
     fake_panic: bool
     fake_panic_reason: str
     action: str
     signals: list[SignalStatus] = field(default_factory=list)
     composite_score: float = 0.0
+    stress_score: float = 0.0
 
 
 def _download_panel(
@@ -268,7 +323,7 @@ def _download_panel(
 
 
 def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
-    """Build backward-looking crash indicator features from a multi-asset panel."""
+    """Build crash indicator features from a multi-asset panel."""
     if panel.empty or "SPY" not in panel.columns:
         return pd.DataFrame()
 
@@ -289,10 +344,12 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
         vix_std = vix.rolling(LOOKBACK_ZSCORE).std()
         feat["vix_zscore"] = (vix - vix_mean) / vix_std
         feat["vix_rvol_spread"] = vix - feat["vol_20d"] * 100
+        feat["vix_rising"] = vix.pct_change(VIX_RISING_WINDOW)
 
     if "TNX" in panel and "IRX" in panel:
         feat["yc_slope"] = panel["TNX"] - panel["IRX"]
         feat["yc_inverted"] = (feat["yc_slope"] < 0).astype(int)
+        feat["yc_deteriorating"] = feat["yc_slope"] - feat["yc_slope"].shift(YC_DETERIORATION_WINDOW)
 
     if "HYG" in panel and "LQD" in panel:
         feat["credit_stress"] = (
@@ -305,7 +362,9 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
         )
 
     if "IXIC" in panel:
-        feat["nasdaq_lag"] = panel["IXIC"].pct_change(SMALLCAP_LAG_WINDOW) - spy.pct_change(
+        ixic = panel["IXIC"]
+        feat["ixic_momentum_12_1"] = ixic.pct_change(MOMENTUM_LONG) - ixic.pct_change(MOMENTUM_SHORT)
+        feat["ixic_lag"] = ixic.pct_change(SMALLCAP_LAG_WINDOW) - spy.pct_change(
             SMALLCAP_LAG_WINDOW
         )
 
@@ -315,6 +374,9 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
 def _signal_active(key: str, row: pd.Series) -> bool:
     if key == "yc_inverted":
         return bool(row.get("yc_inverted", 0) == 1)
+    if key == "yc_deteriorating":
+        val = row.get("yc_deteriorating")
+        return bool(pd.notna(val) and val < -0.75)
     if key == "credit_stress":
         return bool(row.get("credit_stress", 0) > 0)
     if key == "smallcap_lag":
@@ -323,12 +385,21 @@ def _signal_active(key: str, row: pd.Series) -> bool:
     if key == "vix_rvol_spread":
         val = row.get("vix_rvol_spread")
         return bool(pd.notna(val) and val > 10)
-    if key == "vix_elevated":
-        val = row.get("vix_zscore")
-        return bool(pd.notna(val) and val > 1.5)
+    if key == "vix_rising":
+        val = row.get("vix_rising")
+        return bool(pd.notna(val) and val > 0.30)
     if key == "momentum_12_1":
         val = row.get("momentum_12_1")
         return bool(pd.notna(val) and val < 0)
+    if key == "ixic_momentum_12_1":
+        val = row.get("ixic_momentum_12_1")
+        return bool(pd.notna(val) and val < 0)
+    if key == "ixic_lag":
+        val = row.get("ixic_lag")
+        return bool(pd.notna(val) and val < -0.05)
+    if key == "vix_elevated":
+        val = row.get("vix_zscore")
+        return bool(pd.notna(val) and val > 1.5)
     if key == "below_sma200":
         return bool(row.get("below_sma200", 0) == 1)
     if key == "drawdown_10":
@@ -343,11 +414,15 @@ def _signal_active(key: str, row: pd.Series) -> bool:
 def _format_value(key: str, row: pd.Series) -> tuple[float | None, str]:
     mapping = {
         "yc_inverted": ("yc_slope", lambda v: f"{v:.2f}pp"),
+        "yc_deteriorating": ("yc_deteriorating", lambda v: f"{v:.2f}pp"),
         "credit_stress": ("credit_stress", lambda v: f"{v * 100:.2f}%"),
         "smallcap_lag": ("smallcap_lag", lambda v: f"{v * 100:.2f}%"),
         "vix_rvol_spread": ("vix_rvol_spread", lambda v: f"{v:.1f}"),
-        "vix_elevated": ("vix_zscore", lambda v: f"{v:.2f}"),
+        "vix_rising": ("vix_rising", lambda v: f"{v * 100:.0f}%"),
         "momentum_12_1": ("momentum_12_1", lambda v: f"{v * 100:.2f}%"),
+        "ixic_momentum_12_1": ("ixic_momentum_12_1", lambda v: f"{v * 100:.2f}%"),
+        "ixic_lag": ("ixic_lag", lambda v: f"{v * 100:.2f}%"),
+        "vix_elevated": ("vix_zscore", lambda v: f"{v:.2f}"),
         "below_sma200": ("below_sma200", lambda v: "Yes" if v == 1 else "No"),
         "drawdown_10": ("dd_from_peak_252", lambda v: f"{v * 100:.1f}%"),
         "vol_spike": ("vol_20d", lambda v: f"{v * 100:.1f}%"),
@@ -363,34 +438,49 @@ def _format_value(key: str, row: pd.Series) -> tuple[float | None, str]:
     return float(val), fmt(val)
 
 
+def _tier_counts(signals: list[SignalStatus]) -> tuple[int, int, int, int]:
+    macro = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.MACRO)
+    market = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.MARKET)
+    nasdaq = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.NASDAQ)
+    coincident = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.COINCIDENT)
+    return macro, market, nasdaq, coincident
+
+
+def _predictive_score(macro: int, market: int, nasdaq: int) -> float:
+    return macro * TIER_WEIGHTS[SignalTier.MACRO] + market * TIER_WEIGHTS[SignalTier.MARKET] + nasdaq * TIER_WEIGHTS[SignalTier.NASDAQ]
+
+
+def _stress_score(coincident: int) -> float:
+    return coincident * 1.0
+
+
 def _detect_fake_panic(row: pd.Series, signals: list[SignalStatus]) -> tuple[bool, str]:
-    """VIX spike without credit confirmation — often a headline panic, not systemic."""
-    vix_on = any(s.rule.key == "vix_elevated" and s.active for s in signals)
+    """VIX building without credit confirmation — often headline panic, not systemic."""
+    vix_rising = any(s.rule.key == "vix_rising" and s.active for s in signals)
     vix_rvol_on = any(s.rule.key == "vix_rvol_spread" and s.active for s in signals)
     credit_on = any(s.rule.key == "credit_stress" and s.active for s in signals)
     below_trend = bool(row.get("below_sma200", 0) == 1)
 
-    if (vix_on or vix_rvol_on) and not credit_on and not below_trend:
+    if (vix_rising or vix_rvol_on) and not credit_on and not below_trend:
         return True, (
-            "VIX is elevated but credit markets are calm and SPY remains above its "
+            "VIX is rising but credit markets are calm and SPY remains above its "
             "200-day average — possible headline panic rather than systemic stress."
         )
     return False, ""
 
 
-def _risk_level_from_counts(macro: int, market: int, coincident: int) -> RiskLevel:
-    total = macro + market + coincident
-    if coincident >= 2 or total >= 5:
+def _risk_level_from_score(score: float, macro: int, market: int, nasdaq: int) -> RiskLevel:
+    if score >= CRITICAL_SCORE_THRESHOLD or (macro >= 1 and nasdaq >= 1 and market >= 2):
         return RiskLevel.CRITICAL
-    if total >= 4 or macro >= 1 and market >= 2:
+    if score >= DEFENSIVE_SCORE_THRESHOLD or (macro >= 1 and market >= 2):
         return RiskLevel.DEFENSIVE
-    if total >= 2:
+    if score >= 4.0 or macro + market + nasdaq >= 2:
         return RiskLevel.CAUTION
     return RiskLevel.RISK_ON
 
 
 def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
-    """Evaluate crash early-warning signals on the last row of *features*."""
+    """Evaluate predictive crash signals on the last row of *features*."""
     if features.empty:
         raise ValueError("feature frame is empty")
 
@@ -409,35 +499,37 @@ def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
             )
         )
 
-    macro = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.MACRO)
-    market = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.MARKET)
-    coincident = sum(1 for s in signals if s.active and s.rule.tier is SignalTier.COINCIDENT)
+    macro, market, nasdaq, coincident = _tier_counts(signals)
     fake_panic, fake_reason = _detect_fake_panic(row, signals)
+    composite = _predictive_score(macro, market, nasdaq)
+    stress = _stress_score(coincident)
 
-    level = _risk_level_from_counts(macro, market, coincident)
+    level = _risk_level_from_score(composite, macro, market, nasdaq)
     if fake_panic and level in {RiskLevel.DEFENSIVE, RiskLevel.CRITICAL}:
         level = RiskLevel.CAUTION
 
-    composite = macro * 2.0 + market * 1.5 + coincident * 1.0
+    predictive_active = macro + market + nasdaq
 
     return CrashAssessment(
         as_of=as_of,
         risk_level=level,
-        active_count=macro + market + coincident,
+        active_count=predictive_active,
         macro_count=macro,
         market_count=market,
+        nasdaq_count=nasdaq,
         coincident_count=coincident,
         fake_panic=fake_panic,
         fake_panic_reason=fake_reason,
         action=RISK_ACTIONS[level],
         signals=signals,
         composite_score=composite,
+        stress_score=stress,
     )
 
 
 def _score_from_row(row: pd.Series) -> float:
-    macro = market = coincident = 0
-    for rule in SIGNAL_RULES:
+    macro = market = nasdaq = 0
+    for rule in PREDICTIVE_SIGNAL_RULES:
         if not _signal_active(rule.key, row):
             continue
         if rule.tier is SignalTier.MACRO:
@@ -445,12 +537,36 @@ def _score_from_row(row: pd.Series) -> float:
         elif rule.tier is SignalTier.MARKET:
             market += 1
         else:
-            coincident += 1
-    return macro * 2.0 + market * 1.5 + coincident * 1.0
+            nasdaq += 1
+    return _predictive_score(macro, market, nasdaq)
 
 
-def composite_score_chart(features: pd.DataFrame) -> pd.Series:
-    """Quarterly crash score with 2-quarter smoothing — optimized for chart readability."""
+def predictive_score_series(
+    features: pd.DataFrame,
+    *,
+    monthly: bool = False,
+    smooth: int = 0,
+) -> pd.Series:
+    """Daily or monthly predictive crash score history."""
+    if features.empty:
+        return pd.Series(dtype=float)
+
+    if monthly:
+        points: dict[pd.Timestamp, float] = {}
+        for _, group in features.groupby(features.index.to_period("M")):
+            points[group.index[-1]] = _score_from_row(group.iloc[-1])
+        series = pd.Series(points).sort_index()
+    else:
+        scores = [_score_from_row(features.iloc[i]) for i in range(len(features))]
+        series = pd.Series(scores, index=features.index)
+
+    if smooth > 1 and not series.empty:
+        return series.rolling(smooth, min_periods=1).mean()
+    return series
+
+
+def predictive_score_chart(features: pd.DataFrame) -> pd.Series:
+    """Quarterly predictive score with 2-quarter smoothing for charts."""
     if features.empty:
         return pd.Series(dtype=float)
 
@@ -464,16 +580,14 @@ def composite_score_chart(features: pd.DataFrame) -> pd.Series:
     return series
 
 
-def composite_score_monthly(features: pd.DataFrame) -> pd.Series:
-    """One crash score per calendar month (last trading day) for chart display."""
-    if features.empty:
-        return pd.Series(dtype=float)
+def composite_score_chart(features: pd.DataFrame) -> pd.Series:
+    """Alias for :func:`predictive_score_chart` (backward compatible)."""
+    return predictive_score_chart(features)
 
-    points: dict[pd.Timestamp, float] = {}
-    for _, group in features.groupby(features.index.to_period("M")):
-        score = _score_from_row(group.iloc[0])
-        points[group.index[-1]] = score
-    return pd.Series(points).sort_index()
+
+def composite_score_monthly(features: pd.DataFrame) -> pd.Series:
+    """One predictive score per calendar month."""
+    return predictive_score_series(features, monthly=True)
 
 
 def composite_score_series(
@@ -482,24 +596,8 @@ def composite_score_series(
     monthly: bool = True,
     smooth: int = 0,
 ) -> pd.Series:
-    """Historical composite warning score.
-
-    For charts, prefer :func:`composite_score_monthly` (one point per month).
-    """
-    if features.empty:
-        return pd.Series(dtype=float)
-
-    if monthly:
-        series = composite_score_monthly(features)
-        if smooth > 1 and not series.empty:
-            return series.rolling(smooth, min_periods=1).mean()
-        return series
-
-    scores = [_score_from_row(features.iloc[i]) for i in range(len(features))]
-    series = pd.Series(scores, index=features.index)
-    if smooth > 1:
-        series = series.rolling(smooth, min_periods=1).mean()
-    return series
+    """Historical predictive crash score."""
+    return predictive_score_series(features, monthly=monthly, smooth=smooth)
 
 
 def nasdaq_normalized(panel: pd.DataFrame, start: pd.Timestamp) -> pd.Series:

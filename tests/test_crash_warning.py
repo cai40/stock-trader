@@ -3,9 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from stock_trader.crash_backtest import run_crash_score_backtest
 from stock_trader.crash_warning import (
     HISTORICAL_CRASHES,
     RiskLevel,
+    SignalTier,
     _download_panel,
     assess_crash_risk,
     composite_score_chart,
@@ -16,6 +18,8 @@ from stock_trader.crash_warning import (
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
+    predictive_score_chart,
+    predictive_score_series,
 )
 from stock_trader.charts import crash_warning_nasdaq_figure
 
@@ -80,6 +84,8 @@ def test_compute_crash_features_columns() -> None:
     features = compute_crash_features(panel)
     assert "vix_rvol_spread" in features.columns
     assert "yc_inverted" in features.columns
+    assert "ixic_momentum_12_1" in features.columns
+    assert "vix_rising" in features.columns
     assert len(features) == len(panel)
 
 
@@ -93,8 +99,15 @@ def test_assess_crash_risk_risk_on_in_calm_market() -> None:
 def test_assess_crash_risk_elevated_in_stress_market() -> None:
     features = compute_crash_features(_stress_panel()).dropna()
     assessment = assess_crash_risk(features)
-    assert assessment.active_count >= 3
+    assert assessment.stress_score >= 1
     assert assessment.risk_level in {RiskLevel.CAUTION, RiskLevel.DEFENSIVE, RiskLevel.CRITICAL}
+
+
+def test_predictive_score_excludes_coincident_tiers() -> None:
+    features = compute_crash_features(_stress_panel()).dropna()
+    assessment = assess_crash_risk(features)
+    coincident = [s for s in assessment.signals if s.rule.tier is SignalTier.COINCIDENT and s.active]
+    assert assessment.stress_score == float(len(coincident))
 
 
 def test_composite_score_series_length() -> None:
@@ -105,18 +118,12 @@ def test_composite_score_series_length() -> None:
     assert float(scores.iloc[-1]) >= 0
 
 
-def test_composite_score_monthly_one_point_per_month() -> None:
+def test_predictive_score_chart_fewer_points_than_daily() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    monthly = composite_score_monthly(features)
-    months = monthly.index.to_period("M")
-    assert len(months) == len(months.unique())
-
-
-def test_composite_score_chart_fewer_points_than_daily() -> None:
-    features = compute_crash_features(_rising_panel()).dropna()
-    chart = composite_score_chart(features)
+    chart = predictive_score_chart(features)
     assert len(chart) < len(features)
     assert len(chart) >= 1
+    assert chart.equals(composite_score_chart(features))
 
 
 def test_load_crash_panel_with_fake_data() -> None:
@@ -175,8 +182,25 @@ def test_download_panel_handles_mixed_timezones() -> None:
     assert panel.index.tz is None
 
 
-def test_crash_score_guide_mentions_signals() -> None:
+def test_crash_score_guide_mentions_predictive_signals() -> None:
     guide = crash_score_guide_markdown()
     assert "Yield curve inverted" in guide
-    assert "macro" in guide.lower()
+    assert "NASDAQ 12" in guide
+    assert "Live stress" in guide
     assert "Fake panic" in guide
+
+
+def test_run_crash_score_backtest_on_synthetic_panel() -> None:
+    panel = _rising_panel()
+    features = compute_crash_features(panel).dropna()
+    nasdaq = panel["IXIC"].reindex(features.index)
+    result = run_crash_score_backtest(features, nasdaq)
+    assert result.n_days == len(features)
+    assert result.early_warning_total >= 0
+    assert 0.0 <= result.auc_6m <= 1.0 or pd.isna(result.auc_6m)
+
+
+def test_predictive_score_series_daily() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    daily = predictive_score_series(features, monthly=False)
+    assert len(daily) == len(features)
