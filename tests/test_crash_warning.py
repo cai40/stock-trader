@@ -4,12 +4,16 @@ import pandas as pd
 import pytest
 
 from stock_trader.crash_warning import (
+    HISTORICAL_CRASHES,
     RiskLevel,
     assess_crash_risk,
     composite_score_series,
     compute_crash_features,
+    crashes_in_range,
     load_crash_panel,
+    nasdaq_normalized,
 )
+from stock_trader.charts import crash_warning_nasdaq_figure
 
 
 class FakeMarketData:
@@ -19,6 +23,7 @@ class FakeMarketData:
     def get_history(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
         ticker_map = {
             "SPY": "SPY",
+            "^IXIC": "IXIC",
             "^VIX": "VIX",
             "^TNX": "TNX",
             "^IRX": "IRX",
@@ -42,6 +47,7 @@ def _rising_panel(rows: int = 400) -> pd.DataFrame:
             "HYG": [75 + i * 0.05 for i in range(rows)],
             "LQD": [100 + i * 0.04 for i in range(rows)],
             "IWM": [90 + i * 0.15 for i in range(rows)],
+            "IXIC": [200 + i * 0.25 for i in range(rows)],
         },
         index=dates,
     )
@@ -59,6 +65,7 @@ def _stress_panel(rows: int = 400) -> pd.DataFrame:
             "HYG": [80.0] * 300 + [65.0 - i * 0.05 for i in range(100)],
             "LQD": [110.0] * 300 + [112.0 + i * 0.02 for i in range(100)],
             "IWM": [100.0] * 300 + [75.0 - i * 0.2 for i in range(100)],
+            "IXIC": [300.0] * 300 + [220.0 - i * 0.4 for i in range(100)],
         },
         index=dates,
     )
@@ -107,3 +114,27 @@ def test_load_crash_panel_with_fake_data() -> None:
 def test_assess_crash_risk_empty_features_raises() -> None:
     with pytest.raises(ValueError, match="empty"):
         assess_crash_risk(pd.DataFrame())
+
+
+def test_nasdaq_normalized_starts_at_100() -> None:
+    panel = _rising_panel()
+    series = nasdaq_normalized(panel, pd.Timestamp("2018-06-01"))
+    assert not series.empty
+    assert series.iloc[0] == pytest.approx(100.0)
+
+
+def test_crashes_in_range_filters_events() -> None:
+    events = crashes_in_range(pd.Timestamp("2007-01-01"), pd.Timestamp("2010-01-01"))
+    names = {e.name for e in events}
+    assert "Global Financial Crisis" in names
+    assert "Dot-com bust" not in names
+
+
+def test_crash_warning_nasdaq_figure_builds() -> None:
+    panel = _rising_panel()
+    features = compute_crash_features(panel).dropna()
+    score = composite_score_series(features)
+    nasdaq = nasdaq_normalized(panel, panel.index[0])
+    events = list(HISTORICAL_CRASHES)
+    fig = crash_warning_nasdaq_figure(nasdaq, score, events)
+    assert len(fig.data) >= 2

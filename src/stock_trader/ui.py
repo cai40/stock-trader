@@ -8,14 +8,18 @@ import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
 from stock_trader.crash_warning import (
+    DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
     composite_score_series,
+    crashes_in_range,
     load_crash_panel,
+    nasdaq_normalized,
     risk_level_color,
 )
 from stock_trader.charts import (
     PLOTLY_MOBILE_CONFIG,
     comparison_figure,
+    crash_warning_nasdaq_figure,
     strategy_label,
     strategy_summary,
 )
@@ -24,7 +28,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -416,15 +420,16 @@ def tab_compare(symbol: str) -> None:
 def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
-        "Composite score from SPY, VIX, yield curve, and credit-market indicators. "
-        "Macro signals lead by months; coincident signals fire during drawdowns. "
+        "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
+        "Shaded bands mark major historical crashes. Default history spans 1993–present. "
         "Educational research tool — not a trading signal."
     )
 
     col1, col2 = st.columns(2)
     start = col1.date_input(
         "History start",
-        value=pd.Timestamp("2018-01-01"),
+        value=pd.Timestamp(DEFAULT_CRASH_HISTORY_START),
+        min_value=pd.Timestamp("1990-01-01"),
         key=f"cw_start_{APP_VERSION}",
     )
     end = col2.date_input(
@@ -438,7 +443,7 @@ def tab_crash_warning() -> None:
             st.error("End date must be after start date.")
             return
 
-        with st.spinner("Loading macro panel (SPY, VIX, yields, credit)..."):
+        with st.spinner("Loading macro panel (SPY, NASDAQ, VIX, yields, credit)..."):
             try:
                 panel, features, assessment = load_crash_panel(
                     start.isoformat(),
@@ -452,10 +457,13 @@ def tab_crash_warning() -> None:
         st.session_state["crash_assessment"] = assessment
         st.session_state["crash_features"] = features
         st.session_state["crash_panel"] = panel
+        st.session_state["crash_start"] = start.isoformat()
+        st.session_state["crash_end"] = end.isoformat()
 
     assessment: object = st.session_state.get("crash_assessment")
     features: object = st.session_state.get("crash_features")
-    if assessment is None or features is None:
+    panel: object = st.session_state.get("crash_panel")
+    if assessment is None or features is None or panel is None:
         st.info("Press **Refresh crash dashboard** to load the latest readings.")
         return
 
@@ -496,31 +504,27 @@ def tab_crash_warning() -> None:
         )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
+    start_ts = pd.Timestamp(st.session_state.get("crash_start", start))
+    end_ts = pd.Timestamp(st.session_state.get("crash_end", end))
     score = composite_score_series(features)
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=score.index,
-            y=score.values,
-            mode="lines",
-            name="Composite score",
-            line=dict(color="#60a5fa", width=2),
-            fill="tozeroy",
-            fillcolor="rgba(96,165,250,0.15)",
-        )
+    nasdaq = nasdaq_normalized(panel, start_ts)
+    events = crashes_in_range(start_ts, end_ts)
+
+    overlay = crash_warning_nasdaq_figure(
+        nasdaq,
+        score,
+        events,
+        title="NASDAQ Composite vs crash warning score (historical crashes marked)",
     )
-    fig.add_hline(y=4, line_dash="dot", line_color="#fb923c", annotation_text="Defensive")
-    fig.add_hline(y=6, line_dash="dot", line_color="#f87171", annotation_text="Critical")
-    fig.update_layout(
-        template="plotly_dark",
-        title="Composite crash warning score over time",
-        height=360,
-        margin=dict(l=10, r=10, t=50, b=10),
-        dragmode=False,
-        xaxis=dict(title="Date", fixedrange=True),
-        yaxis=dict(title="Score", fixedrange=True),
-    )
-    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+    st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+
+    if events:
+        event_rows = [
+            {"Crash": e.name, "Peak": e.peak, "Trough": e.trough}
+            for e in events
+        ]
+        st.caption("Historical crash episodes in selected range")
+        st.dataframe(pd.DataFrame(event_rows), use_container_width=True, hide_index=True)
 
     if "vix" in features.columns and "vol_20d" in features.columns:
         vix_fig = go.Figure()

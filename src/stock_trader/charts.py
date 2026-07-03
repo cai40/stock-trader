@@ -149,3 +149,94 @@ def comparison_figure(
     )
 
     return fig
+
+
+def crash_warning_nasdaq_figure(
+    nasdaq: pd.Series,
+    composite_score: pd.Series,
+    crashes: list,
+    *,
+    title: str = "NASDAQ Composite vs crash warning score",
+) -> go.Figure:
+    """Dual-axis chart: NASDAQ (indexed) and composite score with historical crash bands."""
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    for event in crashes:
+        fig.add_vrect(
+            x0=event.peak,
+            x1=event.trough,
+            fillcolor="rgba(248, 113, 113, 0.18)",
+            line_width=0,
+            layer="below",
+        )
+
+    if not nasdaq.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=nasdaq.index,
+                y=nasdaq.values,
+                mode="lines",
+                name="NASDAQ Composite (indexed=100)",
+                line=dict(color="#c084fc", width=2),
+                hovertemplate="%{x|%b %d, %Y}<br>%{y:.1f}<extra>NASDAQ</extra>",
+            ),
+            secondary_y=False,
+        )
+
+    if not composite_score.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=composite_score.index,
+                y=composite_score.values,
+                mode="lines",
+                name="Crash warning score",
+                line=dict(color="#60a5fa", width=2),
+                hovertemplate="%{x|%b %d, %Y}<br>%{y:.1f}<extra>Score</extra>",
+            ),
+            secondary_y=True,
+        )
+
+    for event in crashes:
+        trough = pd.Timestamp(event.trough)
+        if nasdaq.empty:
+            x_point = trough
+            y_point = 0
+        else:
+            loc = nasdaq.index.get_indexer([trough], method="nearest")[0]
+            x_point = nasdaq.index[loc]
+            y_point = float(nasdaq.iloc[loc])
+        fig.add_annotation(
+            x=x_point,
+            y=y_point,
+            text=event.name,
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=0.8,
+            arrowcolor="#f87171",
+            ax=0,
+            ay=-40,
+            font=dict(size=10, color="#fca5a5"),
+            bgcolor="rgba(26,31,46,0.85)",
+            bordercolor="#f87171",
+            borderwidth=1,
+        )
+
+    fig.add_hline(y=4, line_dash="dot", line_color="#fb923c", secondary_y=True)
+    fig.add_hline(y=6, line_dash="dot", line_color="#f87171", secondary_y=True)
+
+    fig.update_layout(
+        template="plotly_dark",
+        title=title,
+        height=440,
+        margin=dict(l=10, r=10, t=50, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        hovermode="x unified",
+        dragmode=False,
+        xaxis=dict(title="Date", fixedrange=True, type="date"),
+    )
+    fig.update_yaxes(title_text="NASDAQ (start = 100)", secondary_y=False, fixedrange=True)
+    fig.update_yaxes(title_text="Crash warning score", secondary_y=True, fixedrange=True)
+
+    return fig

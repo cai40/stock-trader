@@ -10,6 +10,7 @@ from stock_trader.market_data import MarketDataProvider, YFinanceMarketData
 
 PANEL_SYMBOLS = {
     "SPY": "SPY",
+    "IXIC": "^IXIC",
     "VIX": "^VIX",
     "TNX": "^TNX",
     "IRX": "^IRX",
@@ -17,6 +18,8 @@ PANEL_SYMBOLS = {
     "LQD": "LQD",
     "IWM": "IWM",
 }
+
+DEFAULT_CRASH_HISTORY_START = "1993-01-01"
 
 LOOKBACK_ZSCORE = 252
 VOL_WINDOW = 20
@@ -63,6 +66,23 @@ RISK_COLORS: dict[RiskLevel, str] = {
 
 def risk_level_color(level: RiskLevel) -> str:
     return RISK_COLORS[level]
+
+
+@dataclass(frozen=True)
+class CrashEvent:
+    name: str
+    peak: str
+    trough: str
+
+
+HISTORICAL_CRASHES: tuple[CrashEvent, ...] = (
+    CrashEvent("Dot-com bust", "2000-03-24", "2002-10-09"),
+    CrashEvent("Global Financial Crisis", "2007-10-09", "2009-03-09"),
+    CrashEvent("2011 debt crisis", "2011-04-29", "2011-10-03"),
+    CrashEvent("2018 Q4 selloff", "2018-09-20", "2018-12-24"),
+    CrashEvent("COVID crash", "2020-02-19", "2020-03-23"),
+    CrashEvent("2022 bear market", "2022-01-03", "2022-10-12"),
+)
 
 
 @dataclass(frozen=True)
@@ -204,6 +224,11 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
             SMALLCAP_LAG_WINDOW
         )
 
+    if "IXIC" in panel:
+        feat["nasdaq_lag"] = panel["IXIC"].pct_change(SMALLCAP_LAG_WINDOW) - spy.pct_change(
+            SMALLCAP_LAG_WINDOW
+        )
+
     return feat
 
 
@@ -334,15 +359,43 @@ def composite_score_series(features: pd.DataFrame) -> pd.Series:
     """Historical composite warning score for charting."""
     scores: list[float] = []
     for i in range(len(features)):
-        sub = features.iloc[: i + 1]
-        if sub.dropna(how="all").empty:
-            scores.append(0.0)
-            continue
-        try:
-            scores.append(assess_crash_risk(sub).composite_score)
-        except ValueError:
-            scores.append(0.0)
+        row = features.iloc[i]
+        macro = market = coincident = 0
+        for rule in SIGNAL_RULES:
+            if not _signal_active(rule.key, row):
+                continue
+            if rule.tier is SignalTier.MACRO:
+                macro += 1
+            elif rule.tier is SignalTier.MARKET:
+                market += 1
+            else:
+                coincident += 1
+        scores.append(macro * 2.0 + market * 1.5 + coincident * 1.0)
     return pd.Series(scores, index=features.index)
+
+
+def nasdaq_normalized(panel: pd.DataFrame, start: pd.Timestamp) -> pd.Series:
+    """NASDAQ Composite indexed to 100 at *start* for overlay charts."""
+    if "IXIC" not in panel.columns:
+        return pd.Series(dtype=float)
+    series = panel["IXIC"].astype(float).loc[panel.index >= start]
+    if series.empty:
+        return series
+    base = float(series.iloc[0])
+    if base <= 0:
+        return series
+    return series / base * 100.0
+
+
+def crashes_in_range(start: pd.Timestamp, end: pd.Timestamp) -> list[CrashEvent]:
+    """Return historical crash episodes overlapping [start, end]."""
+    events: list[CrashEvent] = []
+    for event in HISTORICAL_CRASHES:
+        peak = pd.Timestamp(event.peak)
+        trough = pd.Timestamp(event.trough)
+        if trough >= start and peak <= end:
+            events.append(event)
+    return events
 
 
 def load_crash_panel(
@@ -357,7 +410,10 @@ def load_crash_panel(
     )
     panel = _download_panel(provider, warmup_start, end)
     features = compute_crash_features(panel)
-    features = features.loc[features.index >= pd.Timestamp(start)].dropna(how="all")
+    features = features.loc[features.index >= pd.Timestamp(start)]
+    core = [col for col in ("vol_20d", "dd_from_peak_252") if col in features.columns]
+    if core:
+        features = features.dropna(subset=core)
     if features.empty:
         raise ValueError("insufficient data to compute crash warning features")
     assessment = assess_crash_risk(features)
