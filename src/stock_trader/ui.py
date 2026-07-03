@@ -10,7 +10,7 @@ from stock_trader.backtest import BacktestEngine
 from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
-    composite_score_series,
+    composite_score_monthly,
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
@@ -28,7 +28,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.3"
+APP_VERSION = "0.5.4"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -421,8 +421,7 @@ def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
         "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
-        "Score updates monthly (first trading day) with a 20-day rolling average for readability. "
-        "Shaded bands mark major historical crashes. Default history spans 1993–present."
+        "Score updates once per month. Red shaded bands = historical crashes (see table below). "
     )
 
     with st.expander("What is VIX?"):
@@ -523,16 +522,11 @@ def tab_crash_warning() -> None:
 
     start_ts = pd.Timestamp(st.session_state.get("crash_start", start))
     end_ts = pd.Timestamp(st.session_state.get("crash_end", end))
-    score = composite_score_series(features)
+    score = composite_score_monthly(features)
     nasdaq = nasdaq_normalized(panel, start_ts)
     events = crashes_in_range(start_ts, end_ts)
 
-    overlay = crash_warning_nasdaq_figure(
-        nasdaq,
-        score,
-        events,
-        title="NASDAQ vs monthly crash score (20-day smoothed; crashes marked)",
-    )
+    overlay = crash_warning_nasdaq_figure(nasdaq, score, events)
     st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
 
     if events:

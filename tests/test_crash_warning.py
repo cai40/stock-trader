@@ -8,6 +8,7 @@ from stock_trader.crash_warning import (
     RiskLevel,
     _download_panel,
     assess_crash_risk,
+    composite_score_monthly,
     composite_score_series,
     compute_crash_features,
     crashes_in_range,
@@ -96,16 +97,17 @@ def test_assess_crash_risk_elevated_in_stress_market() -> None:
 
 def test_composite_score_series_length() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    scores = composite_score_series(features)
-    assert len(scores) == len(features)
+    scores = composite_score_monthly(features)
+    assert len(scores) <= len(features)
+    assert len(scores) >= 1
     assert float(scores.iloc[-1]) >= 0
 
 
-def test_composite_score_series_constant_within_month() -> None:
+def test_composite_score_monthly_one_point_per_month() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    scores = composite_score_series(features, monthly=True, smooth=1)
-    for _, group in scores.groupby(scores.index.to_period("M")):
-        assert group.nunique() <= 1
+    monthly = composite_score_monthly(features)
+    months = monthly.index.to_period("M")
+    assert len(months) == len(months.unique())
 
 
 def test_load_crash_panel_with_fake_data() -> None:
@@ -141,7 +143,7 @@ def test_crashes_in_range_filters_events() -> None:
 def test_crash_warning_nasdaq_figure_builds() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel).dropna()
-    score = composite_score_series(features)
+    score = composite_score_monthly(features)
     nasdaq = nasdaq_normalized(panel, panel.index[0])
     events = list(HISTORICAL_CRASHES)
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)

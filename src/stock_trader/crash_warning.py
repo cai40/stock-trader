@@ -372,36 +372,38 @@ def _score_from_row(row: pd.Series) -> float:
     return macro * 2.0 + market * 1.5 + coincident * 1.0
 
 
+def composite_score_monthly(features: pd.DataFrame) -> pd.Series:
+    """One crash score per calendar month (last trading day) for chart display."""
+    if features.empty:
+        return pd.Series(dtype=float)
+
+    points: dict[pd.Timestamp, float] = {}
+    for _, group in features.groupby(features.index.to_period("M")):
+        score = _score_from_row(group.iloc[0])
+        points[group.index[-1]] = score
+    return pd.Series(points).sort_index()
+
+
 def composite_score_series(
     features: pd.DataFrame,
     *,
     monthly: bool = True,
-    smooth: int = SCORE_SMOOTH_WINDOW,
+    smooth: int = 0,
 ) -> pd.Series:
-    """Historical composite warning score for charting.
+    """Historical composite warning score.
 
-    Signals are re-evaluated on the first trading day of each month (matching
-    tactical-allocation research), then optionally smoothed with a rolling mean
-    so the chart is readable against long-run index moves.
+    For charts, prefer :func:`composite_score_monthly` (one point per month).
     """
     if features.empty:
         return pd.Series(dtype=float)
 
-    scores: list[float] = []
-    last_month: pd.Period | None = None
-    month_score = 0.0
+    if monthly:
+        series = composite_score_monthly(features)
+        if smooth > 1 and not series.empty:
+            return series.rolling(smooth, min_periods=1).mean()
+        return series
 
-    for i in range(len(features)):
-        row = features.iloc[i]
-        if monthly:
-            month = row.name.to_period("M")
-            if last_month is None or month != last_month:
-                month_score = _score_from_row(row)
-                last_month = month
-            scores.append(month_score)
-        else:
-            scores.append(_score_from_row(row))
-
+    scores = [_score_from_row(features.iloc[i]) for i in range(len(features))]
     series = pd.Series(scores, index=features.index)
     if smooth > 1:
         series = series.rolling(smooth, min_periods=1).mean()
