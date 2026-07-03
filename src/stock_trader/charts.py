@@ -14,6 +14,7 @@ STRATEGY_COLORS: dict[str, str] = {
     "trend_filter": "#22d3ee",
     "dual_momentum": "#c084fc",
     "vol_target": "#4ade80",
+    "hybrid_regime": "#fbbf24",
 }
 
 STRATEGY_LABELS: dict[str, str] = {
@@ -27,6 +28,7 @@ STRATEGY_LABELS: dict[str, str] = {
     "trend_filter": "Trend Filter (200 SMA)",
     "dual_momentum": "Dual Momentum (SPY vs SHY)",
     "vol_target": "Vol Target (15% target)",
+    "hybrid_regime": "Hybrid Regime",
 }
 
 STRATEGY_SUMMARIES: dict[str, str] = {
@@ -40,6 +42,7 @@ STRATEGY_SUMMARIES: dict[str, str] = {
     "bollinger": "Buys near the lower Bollinger Band and sells near the upper band.",
     "absolute_momentum": "Holds the stock when its 12-month return is positive, otherwise stays in cash.",
     "trend_filter": "Holds only when price is above the 200-day moving average, exiting on a break below.",
+    "hybrid_regime": "Detects the market regime each month and switches to the best-suited strategy for that environment.",
 }
 
 PLOTLY_MOBILE_CONFIG = {

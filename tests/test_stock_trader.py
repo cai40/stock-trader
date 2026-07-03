@@ -12,6 +12,7 @@ from stock_trader.models import Order, OrderSide, Quote
 from stock_trader.portfolio import Portfolio
 from stock_trader.charts import strategy_label, strategy_summary
 from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.hybrid import hybrid_regime_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.strategies import (
     MovingAverageCrossoverStrategy,
@@ -164,6 +165,37 @@ def test_strategy_summary_returns_one_liner() -> None:
     assert isinstance(text, str)
     assert len(text) > 10
     assert strategy_label("vol_target") == "Vol Target (15% target)"
+
+
+def test_hybrid_regime_equity_curve() -> None:
+    dates = pd.date_range("2022-01-01", periods=300, freq="B")
+    risk = pd.DataFrame({"Close": [100 + i * 0.2 for i in range(300)]}, index=dates)
+    safe = pd.DataFrame({"Close": [80 + i * 0.01 for i in range(300)]}, index=dates)
+
+    equity = hybrid_regime_equity(risk, safe, initial_cash=10_000.0, symbol="TEST")
+    assert len(equity) == len(risk)
+    assert float(equity.iloc[0]) == 10_000.0
+    assert float(equity.iloc[-1]) > 0
+
+
+def test_compare_strategies_includes_hybrid_regime() -> None:
+    history = make_trending_history()
+    safe_history = pd.DataFrame({"Close": [50.0] * len(history)}, index=history.index)
+    market_data: MarketDataProvider = FakeMarketData(
+        {"TEST": history, "SHY": safe_history}
+    )
+    engine = BacktestEngine(market_data)
+
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["buy_and_hold", "hybrid_regime"],
+    )
+
+    assert "hybrid_regime" in comparison.curves
+    assert len(comparison.curves["hybrid_regime"]) == len(history)
 
 
 def test_vol_target_equity_curve() -> None:

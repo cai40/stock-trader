@@ -18,12 +18,12 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.8"
+APP_VERSION = "0.3.9"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
 
-COMPARE_OPTIONS = ["buy_and_hold", "vol_target", "dual_momentum", *list_strategies()]
+COMPARE_OPTIONS = ["buy_and_hold", "hybrid_regime", "vol_target", "dual_momentum", *list_strategies()]
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -102,6 +102,13 @@ def render_strategy_guide_button() -> None:
             st.markdown("**Strategy guide** — one sentence each:")
             for name in COMPARE_OPTIONS:
                 st.markdown(f"**{strategy_label(name)}** — {strategy_summary(name)}")
+            st.markdown("**Hybrid Regime** switches by detected market period:")
+            from stock_trader.regime import REGIME_STRATEGY, regime_label as regime_name
+
+            for regime, strategy in REGIME_STRATEGY.items():
+                st.markdown(
+                    f"- **{regime_name(regime)}** → {strategy_label(strategy)}"
+                )
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:

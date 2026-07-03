@@ -6,6 +6,7 @@ import pandas as pd
 
 from stock_trader.benchmarks import buy_and_hold_equity, equity_metrics
 from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.hybrid import hybrid_regime_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
@@ -167,6 +168,27 @@ class BacktestEngine:
                 results[name] = BacktestResult(
                     symbol=symbol,
                     strategy_name="vol_target",
+                    start_cash=initial_cash,
+                    end_equity=end_equity,
+                    max_drawdown=compute_max_drawdown(equity.tolist()),
+                    equity_curve=equity,
+                )
+                continue
+
+            if name == "hybrid_regime":
+                if safe_history is None:
+                    safe_history = self.market_data.get_history(
+                        "SHY", start=_warmup_start(start), end=end
+                    )
+                equity = hybrid_regime_equity(
+                    full_history, safe_history, initial_cash, symbol=symbol
+                )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
+                curves[name] = equity
+                results[name] = BacktestResult(
+                    symbol=symbol,
+                    strategy_name="hybrid_regime",
                     start_cash=initial_cash,
                     end_equity=end_equity,
                     max_drawdown=compute_max_drawdown(equity.tolist()),
