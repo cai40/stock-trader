@@ -7,13 +7,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
-from stock_trader.charts import PLOTLY_MOBILE_CONFIG, comparison_figure, strategy_label
+from stock_trader.charts import (
+    PLOTLY_MOBILE_CONFIG,
+    comparison_figure,
+    strategy_label,
+    strategy_summary,
+)
 from stock_trader.market_data import YFinanceMarketData
 from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResult, Trade
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.7"
+APP_VERSION = "0.3.8"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -80,6 +85,23 @@ def render_header() -> None:
     if commit:
         version_line += f" · {commit[:7]}"
     st.caption(version_line)
+
+
+def render_strategy_guide_button() -> None:
+    if st.button(
+        "What do the strategies do?",
+        key=f"strategy_guide_btn_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        st.session_state["strategy_guide_open"] = not st.session_state.get(
+            "strategy_guide_open", False
+        )
+
+    if st.session_state.get("strategy_guide_open"):
+        with st.container(border=True):
+            st.markdown("**Strategy guide** — one sentence each:")
+            for name in COMPARE_OPTIONS:
+                st.markdown(f"**{strategy_label(name)}** — {strategy_summary(name)}")
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
@@ -400,6 +422,8 @@ def main() -> None:
     render_header()
 
     symbol = pick_symbol("global", default_symbol="VGT")
+
+    render_strategy_guide_button()
 
     quote_tab, backtest_tab, compare_tab, paper_tab = st.tabs(
         ["Quote", "Backtest", "Compare", "Paper trade"]

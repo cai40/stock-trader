@@ -10,6 +10,7 @@ from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
 from stock_trader.models import Order, OrderSide, Quote
 from stock_trader.portfolio import Portfolio
+from stock_trader.charts import strategy_label, strategy_summary
 from stock_trader.dual_momentum import dual_momentum_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.strategies import (
@@ -156,6 +157,13 @@ def test_dual_momentum_equity_curve() -> None:
     equity = dual_momentum_equity(risk, safe, initial_cash=10_000.0, lookback=60)
     assert len(equity) == len(risk)
     assert float(equity.iloc[0]) > 0
+
+
+def test_strategy_summary_returns_one_liner() -> None:
+    text = strategy_summary("buy_and_hold")
+    assert isinstance(text, str)
+    assert len(text) > 10
+    assert strategy_label("vol_target") == "Vol Target (15% target)"
 
 
 def test_vol_target_equity_curve() -> None:

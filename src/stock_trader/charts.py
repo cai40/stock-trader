@@ -29,6 +29,19 @@ STRATEGY_LABELS: dict[str, str] = {
     "vol_target": "Vol Target (15% target)",
 }
 
+STRATEGY_SUMMARIES: dict[str, str] = {
+    "buy_and_hold": "Buy on day one and hold — the benchmark every other strategy is measured against.",
+    "vol_target": "Scales exposure up in calm markets and down when volatility spikes, targeting 15% annual volatility.",
+    "dual_momentum": "Holds the stock when its 12-month return beats short-term Treasuries (SHY), otherwise holds SHY.",
+    "sma_crossover": "Buys when a short simple moving average crosses above a long one, and sells on the reverse.",
+    "ema_crossover": "Same as SMA crossover but uses exponential averages that weight recent prices more heavily.",
+    "rsi": "Buys when RSI falls below 30 (oversold) and sells when it rises above 70 (overbought).",
+    "macd": "Buys when the MACD line crosses above its signal line, and sells on a bearish cross.",
+    "bollinger": "Buys near the lower Bollinger Band and sells near the upper band.",
+    "absolute_momentum": "Holds the stock when its 12-month return is positive, otherwise stays in cash.",
+    "trend_filter": "Holds only when price is above the 200-day moving average, exiting on a break below.",
+}
+
 PLOTLY_MOBILE_CONFIG = {
     "scrollZoom": False,
     "displayModeBar": True,
@@ -47,6 +60,13 @@ PLOTLY_MOBILE_CONFIG = {
 
 def strategy_label(name: str) -> str:
     return STRATEGY_LABELS.get(name, name.replace("_", " ").title())
+
+
+def strategy_summary(name: str) -> str:
+    return STRATEGY_SUMMARIES.get(
+        name,
+        "A rules-based trading strategy applied to the selected symbol.",
+    )
 
 
 def comparison_figure(
