@@ -6,6 +6,7 @@ import pytest
 from stock_trader.crash_warning import (
     HISTORICAL_CRASHES,
     RiskLevel,
+    _download_panel,
     assess_crash_risk,
     composite_score_series,
     compute_crash_features,
@@ -145,3 +146,19 @@ def test_crash_warning_nasdaq_figure_builds() -> None:
     events = list(HISTORICAL_CRASHES)
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
     assert len(fig.data) >= 2
+
+
+class MixedTzMarketData:
+    """Simulates yfinance returning tz-aware indices for some tickers."""
+
+    def get_history(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
+        idx = pd.date_range("2020-01-01", periods=120, freq="B")
+        if symbol.startswith("^"):
+            idx = idx.tz_localize("America/New_York")
+        return pd.DataFrame({"Close": [100 + i * 0.1 for i in range(120)]}, index=idx)
+
+
+def test_download_panel_handles_mixed_timezones() -> None:
+    panel = _download_panel(MixedTzMarketData(), "2020-01-01", "2020-06-01")
+    assert not panel.empty
+    assert panel.index.tz is None

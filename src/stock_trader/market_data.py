@@ -23,12 +23,20 @@ class MarketDataProvider(Protocol):
         ...
 
 
+def _normalize_index(index: pd.Index) -> pd.DatetimeIndex:
+    """Return a timezone-naive DatetimeIndex (yfinance mixes tz-aware and naive)."""
+    idx = pd.to_datetime(index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_convert("UTC").tz_localize(None)
+    return idx
+
+
 def _normalize_history(frame: pd.DataFrame) -> pd.DataFrame:
     if isinstance(frame.columns, pd.MultiIndex):
         frame.columns = frame.columns.get_level_values(0)
 
     frame = frame.rename(columns=str.title)
-    frame.index = pd.to_datetime(frame.index)
+    frame.index = _normalize_index(frame.index)
     return frame.sort_index()
 
 

@@ -6,7 +6,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
-from stock_trader.market_data import MarketDataProvider, YFinanceMarketData
+from stock_trader.market_data import MarketDataProvider, YFinanceMarketData, _normalize_index
 
 PANEL_SYMBOLS = {
     "SPY": "SPY",
@@ -183,7 +183,9 @@ def _download_panel(
     frames: dict[str, pd.Series] = {}
     for name, ticker in PANEL_SYMBOLS.items():
         history = market_data.get_history(ticker, start=start, end=end)
-        frames[name] = history["Close"].astype(float)
+        series = history["Close"].astype(float)
+        series.index = _normalize_index(series.index)
+        frames[name] = series
     panel = pd.DataFrame(frames).sort_index().ffill()
     return panel.dropna(how="all")
 
