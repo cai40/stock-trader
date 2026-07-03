@@ -213,3 +213,125 @@ is already down 8%+ or VIX is surging.
 
 **Validation:** 222 leading-eligible alert-days at ≥80%, **88%** actually crashed within 12 months.
 """
+
+
+def crash_components_guide_markdown() -> str:
+    """Plain-language guide for each crash score component (UI button)."""
+    return """
+### Score components explained
+
+The **12-month leading crash probability** matches today's signal pattern to
+historically calibrated rules. Only **leading** inputs count — nothing that
+fires after a selloff is already underway.
+
+---
+
+#### Credit stress
+
+**What it is:** Bond investors prefer safety over risk. Investment-grade bonds
+(**LQD**) are outperforming high-yield / junk bonds (**HYG**) over the **past
+3 months**.
+
+**Formula:** `LQD 3mo return − HYG 3mo return`
+
+**Signal ON when:** result **> 0** (safer credit beating risky credit).
+
+**Why it leads:** Credit markets often weaken **before** stocks. When lenders
+pull back from junk debt, equities can follow weeks or months later.
+
+**Data:** HYG and LQD ETFs (reliable from ~2007).
+
+---
+
+#### Small-cap weakness
+
+**What it is:** Small companies are lagging large caps — market **breadth** is
+narrowing even if headline indices still look fine.
+
+**Tickers:** **IWM** (Russell 2000) vs **SPY** (S&P 500)
+
+**Formula:** `IWM 3mo return − SPY 3mo return`
+
+**Signal ON when:** IWM trails SPY by **more than 5%** over 3 months.
+
+**Why it leads:** Small caps are sensitive to funding and recession fears.
+They often roll over before NASDAQ / large-cap peaks.
+
+---
+
+#### Credit worsening
+
+**What it is:** Credit stress is **accelerating** — the LQD-vs-HYG gap is
+widening faster than it was 3 weeks ago.
+
+**Formula:** change in `credit_stress` over **21 days**
+
+**Signal ON when:** credit stress measure rose by **> 1%** over 21 days.
+
+**Used in:** higher-confidence combos with credit stress and/or small-cap
+weakness (e.g. both + worsening → ~87–90% historical 12mo crash rate).
+
+---
+
+#### Yield curve inverted
+
+**What it is:** Short-term rates are above long-term rates — a classic
+**recession warning**.
+
+**Tickers:** **^TNX** (10-year Treasury yield) vs **^IRX** (3-month T-bill)
+
+**Signal ON when:** 10Y yield **below** 3-month yield (spread < 0).
+
+**Typical lead:** **6–18 months** before recessions and major equity drawdowns.
+
+---
+
+#### Yield curve flattening
+
+**What it is:** The yield curve is **steepening toward inversion** — not
+inverted yet, but moving that way.
+
+**Signal ON when:** 10Y–3M spread fell by **> 0.75 percentage points** over
+**6 months**.
+
+**Typical lead:** Often precedes full inversion by several months.
+
+---
+
+#### Leading score suppression
+
+The probability is **frozen / reduced** when the market is already in trouble:
+
+- NASDAQ or SPY down **more than 8%** from peak, **or**
+- VIX up **30%+** over 21 days
+
+Then you see *"Leading score inactive"* — use **Live stress** rows instead.
+
+---
+
+#### Live stress (shown separately — **not** in the score)
+
+| Component | Meaning |
+|-----------|---------|
+| **VIX elevated** | Fear gauge unusually high vs past year |
+| **Below 200-day SMA** | SPY trend already broken |
+| **Drawdown > 10%** | Selloff underway |
+| **Realized vol spike** | Daily volatility already extreme |
+
+These are **coincident** — useful to see *during* a crash, not for leading alerts.
+
+---
+
+#### How components combine → probability
+
+| Pattern (leading-eligible days) | Historical 12mo crash rate |
+|----------------------------------|----------------------------|
+| Credit stress + small-cap weakness | **~94%** |
+| Small-cap weakness alone | **~88%** |
+| Yield curve inverted + small-cap weakness | **~79%** |
+| Yield curve inverted alone | **~75%** |
+| Credit stress alone | **~53%** |
+| No pattern matched | **~29%** (baseline) |
+
+**≥ 80%** → critical leading alert. Chart red line = 80% threshold.
+"""

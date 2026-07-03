@@ -8,7 +8,7 @@ import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
 from stock_trader.crash_backtest import backtest_summary_markdown, run_crash_score_backtest
-from stock_trader.leading_crash import CRASH_ALERT_THRESHOLD, leading_crash_probability_chart
+from stock_trader.leading_crash import CRASH_ALERT_THRESHOLD, crash_components_guide_markdown, leading_crash_probability_chart
 from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
@@ -31,7 +31,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -449,9 +449,22 @@ def tab_crash_warning() -> None:
             "crash_score_guide_open", False
         )
 
+    if st.button(
+        "Explain score components (credit, small caps, yield curve…)",
+        key=f"crash_components_guide_btn_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        st.session_state["crash_components_guide_open"] = not st.session_state.get(
+            "crash_components_guide_open", False
+        )
+
     if st.session_state.get("crash_score_guide_open"):
         with st.container(border=True):
             st.markdown(crash_score_guide_markdown())
+
+    if st.session_state.get("crash_components_guide_open"):
+        with st.container(border=True):
+            st.markdown(crash_components_guide_markdown())
 
     with st.expander("What is VIX?"):
         st.markdown(

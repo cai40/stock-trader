@@ -18,6 +18,7 @@ from stock_trader.crash_warning import (
     nasdaq_normalized,
 )
 from stock_trader.leading_crash import (
+    crash_components_guide_markdown,
     evaluate_leading_crash_probability,
     is_leading_eligible,
     leading_crash_probability_chart,
@@ -192,6 +193,15 @@ def test_crash_score_guide_mentions_leading() -> None:
     guide = crash_score_guide_markdown()
     assert "leading" in guide.lower()
     assert "80%" in guide
+
+
+def test_crash_components_guide_covers_key_signals() -> None:
+    guide = crash_components_guide_markdown()
+    assert "Credit stress" in guide
+    assert "Small-cap weakness" in guide
+    assert "Yield curve inverted" in guide
+    assert "Live stress" in guide
+    assert "HYG" in guide and "IWM" in guide
 
 
 def test_evaluate_leading_crash_probability_baseline() -> None:
