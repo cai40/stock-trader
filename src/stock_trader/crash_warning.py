@@ -69,6 +69,83 @@ def risk_level_color(level: RiskLevel) -> str:
     return RISK_COLORS[level]
 
 
+def crash_score_guide_markdown() -> str:
+    """Detailed explanation of the composite crash score for the UI guide."""
+    signal_lines = "\n".join(
+        f"- **{rule.label}** ({rule.tier.value}) — {rule.description}"
+        for rule in SIGNAL_RULES
+    )
+    return f"""
+### What is the crash score?
+
+A **composite warning score** from 0 to ~13.5 that counts how many recession/crash
+indicators are active at once. It is **not** a prediction of a crash — it measures
+**how many stress signals are flashing** across macro, market, and price data.
+
+Data sources: **SPY**, **NASDAQ (^IXIC)**, **VIX**, **Treasury yields** (^TNX / ^IRX),
+**HYG** (high-yield credit), **LQD** (investment-grade credit), **IWM** (small caps).
+
+---
+
+### The 9 signals
+
+{signal_lines}
+
+**Tiers:**
+- **Macro** — slow-moving, can lead recessions by 6–18 months (yield curve)
+- **Market** — medium-term stress (credit, VIX, breadth, momentum)
+- **Coincident** — fires during selloffs (drawdown, vol spike, below 200-day SMA)
+
+---
+
+### How the number is calculated
+
+Each active signal adds weighted points:
+
+| Tier | Points per active signal |
+|------|--------------------------|
+| Macro | **2.0** |
+| Market | **1.5** |
+| Coincident | **1.0** |
+
+**Formula:** `score = (macro × 2) + (market × 1.5) + (coincident × 1)`
+
+Maximum possible score ≈ **13.5** (all 9 signals on).
+
+The **header metric** uses today's reading. The **chart** uses a **quarterly**
+score with **2-quarter smoothing** so long-term trends are readable on mobile.
+
+---
+
+### Risk levels
+
+| Level | Typical trigger | Suggested posture |
+|-------|-----------------|-------------------|
+| **Risk-on** | 0–1 signals | Normal exposure |
+| **Caution** | 2–3 signals | Trim equity 25–50% |
+| **Defensive** | 4+ signals, or macro + 2 market | Rotate to bonds/cash |
+| **Critical** | 2+ coincident, or 5+ total | Maximum defense |
+
+Chart reference lines: **orange = 4** (defensive), **red = 6** (critical).
+
+---
+
+### Fake panic filter
+
+If VIX is elevated but **credit markets are calm** and SPY is **above its 200-day
+average**, the dashboard may downgrade the risk level — headline fear without
+systemic stress (e.g. Aug 2024 yen unwind).
+
+---
+
+### Limitations
+
+- No single indicator predicts crashes reliably; false alarms are common
+- Credit ETF data (HYG/LQD) only exists from ~2007 onward
+- Educational research tool — **not financial advice**
+"""
+
+
 @dataclass(frozen=True)
 class CrashEvent:
     name: str

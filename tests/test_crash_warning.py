@@ -12,6 +12,7 @@ from stock_trader.crash_warning import (
     composite_score_monthly,
     composite_score_series,
     compute_crash_features,
+    crash_score_guide_markdown,
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
@@ -172,3 +173,10 @@ def test_download_panel_handles_mixed_timezones() -> None:
     panel = _download_panel(MixedTzMarketData(), "2020-01-01", "2020-06-01")
     assert not panel.empty
     assert panel.index.tz is None
+
+
+def test_crash_score_guide_mentions_signals() -> None:
+    guide = crash_score_guide_markdown()
+    assert "Yield curve inverted" in guide
+    assert "macro" in guide.lower()
+    assert "Fake panic" in guide

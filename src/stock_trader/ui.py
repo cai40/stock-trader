@@ -11,6 +11,7 @@ from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
     composite_score_chart,
+    crash_score_guide_markdown,
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
@@ -28,7 +29,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.5"
+APP_VERSION = "0.5.6"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -429,6 +430,19 @@ def tab_crash_warning() -> None:
         "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
         "Score is quarterly with 2-quarter smoothing. Red bands = historical crashes (see table). "
     )
+
+    if st.button(
+        "How is the crash score calculated?",
+        key=f"crash_score_guide_btn_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        st.session_state["crash_score_guide_open"] = not st.session_state.get(
+            "crash_score_guide_open", False
+        )
+
+    if st.session_state.get("crash_score_guide_open"):
+        with st.container(border=True):
+            st.markdown(crash_score_guide_markdown())
 
     with st.expander("What is VIX?"):
         st.markdown(
