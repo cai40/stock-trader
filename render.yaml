@@ -3,8 +3,9 @@ services:
     name: stock-trader
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    autoDeploy: true
+    buildCommand: pip install --no-cache-dir pandas yfinance streamlit plotly curl_cffi
+    startCommand: PYTHONPATH=src streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"

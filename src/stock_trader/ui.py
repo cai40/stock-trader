@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -11,7 +13,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.5"
+APP_VERSION = "0.3.6"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -73,7 +75,11 @@ def configure_page() -> None:
 
 def render_header() -> None:
     st.title("📈 Stock Trader")
-    st.caption(f"Paper trading & backtesting · v{APP_VERSION}")
+    version_line = f"Paper trading & backtesting · v{APP_VERSION}"
+    commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    if commit:
+        version_line += f" · {commit[:7]}"
+    st.caption(version_line)
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:

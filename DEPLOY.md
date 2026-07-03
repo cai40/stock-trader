@@ -50,19 +50,30 @@ Tap **Deploy** → wait 3 minutes → open **your new** `https://YOUR-NAME.strea
 
 ### You should see
 
-- **v0.3.0** under the title
+- **v0.3.6** under the title
 - **📋 Pick a stock / ETF** dropdown
 - Tabs: Quote · Backtest · **Compare** · Paper trade
 
 ---
 
-## Option 2: Render (if Streamlit keeps failing)
+## Option 2: Render (recommended — you own the URL)
 
 **https://dashboard.render.com/blueprint/new?repo=https://github.com/cai40/stock-trader**
 
 1. Sign in with **GitHub** (`cai40`)
 2. Tap **Apply**
 3. Use the `.onrender.com` URL Render gives you (you own it)
+
+### Render not updating after a git push?
+
+Render does **not** always redeploy automatically. After changes land on `main`:
+
+1. Open **https://dashboard.render.com** → service **stock-trader**
+2. Tap **Manual Deploy** → **Clear build cache & deploy**
+3. Wait ~3 minutes, then hard-refresh the app URL
+4. Confirm the header shows **v0.3.6** (and a short git commit hash on Render)
+
+If the version is still old, open **Settings** → ensure **Auto-Deploy** is **On** and branch is **main**.
 
 ---
 
