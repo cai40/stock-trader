@@ -20,6 +20,9 @@ STRATEGY_COLORS: dict[str, str] = {
     "faber_sma10": "#38bdf8",
     "risk_parity": "#fb7185",
     "composite_momentum": "#a3e635",
+    "vaa": "#2dd4bf",
+    "aurum_momentum": "#e879f9",
+    "equity_rotation": "#f97316",
 }
 
 STRATEGY_LABELS: dict[str, str] = {
@@ -39,6 +42,9 @@ STRATEGY_LABELS: dict[str, str] = {
     "faber_sma10": "Faber 10-Month SMA",
     "risk_parity": "Risk Parity (SPY/TLT/GLD/SHY)",
     "composite_momentum": "Composite Momentum (6+12mo)",
+    "vaa": "VAA (Vigilant Asset Allocation)",
+    "aurum_momentum": "Aurum Multi-Period Momentum",
+    "equity_rotation": "Equity Rotation (SPY/QQQ/VGT)",
 }
 
 STRATEGY_SUMMARIES: dict[str, str] = {
@@ -58,6 +64,9 @@ STRATEGY_SUMMARIES: dict[str, str] = {
     "faber_sma10": "Meb Faber rule: hold when price is above the 10-month moving average, otherwise stay in cash.",
     "risk_parity": "Inverse-volatility weights across SPY, TLT, GLD, and SHY, rebalanced monthly.",
     "composite_momentum": "Blends 6- and 12-month momentum; holds the stock when the composite score is positive, else SHY.",
+    "vaa": "Keller VAA-G4: 13612 momentum breadth rotation among offensive ETFs (SPY/EFA/EEM/IWM) or defensive bonds.",
+    "aurum_momentum": "Vol-adjusted 1/3/6/12-month momentum rotation across equities and defensive assets (Aurum-style).",
+    "equity_rotation": "Monthly rotation to the strongest 3-month performer among SPY, QQQ, and VGT; exits to SHY when SPY is below its 200-day average.",
 }
 
 PLOTLY_MOBILE_CONFIG = {

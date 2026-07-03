@@ -27,6 +27,9 @@ RESEARCH_STRATEGIES = [
     "buy_and_hold",
     "vol_target",
     "hybrid_vol_crisis",
+    "vaa",
+    "aurum_momentum",
+    "equity_rotation",
     "gem_dual_momentum",
     "faber_sma10",
     "risk_parity",
@@ -335,7 +338,8 @@ def tab_compare(symbol: str) -> None:
     st.subheader("Compare strategies")
     st.caption(
         "Research-backed strategies are selected by default. "
-        "GEM and Risk Parity use multi-asset baskets (SPY/EFA/SHY and SPY/TLT/GLD/SHY). "
+        "Multi-asset strategies (VAA, Aurum, GEM, Risk Parity, Equity Rotation) rotate "
+        "across ETF baskets and ignore the selected symbol for allocation. "
         "Table is sorted by Sharpe ratio (risk-adjusted return)."
     )
 

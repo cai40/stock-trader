@@ -276,6 +276,45 @@ def test_compare_strategies_includes_gem_dual_momentum() -> None:
     assert "gem_dual_momentum" in comparison.curves
 
 
+def test_compare_strategies_includes_new_research_algorithms() -> None:
+    history = make_trending_history()
+    flat = pd.DataFrame({"Close": [50.0] * len(history)}, index=history.index)
+    market_data: MarketDataProvider = FakeMarketData(
+        {
+            "TEST": history,
+            "SPY": history,
+            "QQQ": history,
+            "VGT": history,
+            "EFA": history,
+            "EEM": history,
+            "IWM": history,
+            "LQD": flat,
+            "IEF": flat,
+            "TLT": flat,
+            "GLD": flat,
+            "SHY": flat,
+        }
+    )
+    engine = BacktestEngine(market_data)
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["vaa", "aurum_momentum", "equity_rotation"],
+    )
+    assert "vaa" in comparison.curves
+    assert "aurum_momentum" in comparison.curves
+    assert "equity_rotation" in comparison.curves
+
+
+def test_strategy_labels_for_new_algorithms() -> None:
+    assert "VAA" in strategy_label("vaa")
+    assert "Aurum" in strategy_label("aurum_momentum")
+    assert "Rotation" in strategy_label("equity_rotation")
+    assert "13612" in strategy_summary("vaa")
+
+
 def test_backtest_result_exposes_sharpe_ratio() -> None:
     history = make_trending_history()
     market_data: MarketDataProvider = FakeMarketData({"TEST": history})

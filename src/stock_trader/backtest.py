@@ -4,13 +4,16 @@ from datetime import datetime
 
 import pandas as pd
 
+from stock_trader.aurum_momentum import aurum_momentum_equity
 from stock_trader.benchmarks import buy_and_hold_equity, equity_metrics
-from stock_trader.dual_momentum import dual_momentum_equity
 from stock_trader.composite_momentum import composite_momentum_equity
+from stock_trader.dual_momentum import dual_momentum_equity
+from stock_trader.equity_rotation import equity_rotation_equity
 from stock_trader.faber import faber_sma10_equity
 from stock_trader.gem import gem_dual_momentum_equity
 from stock_trader.hybrid import hybrid_regime_equity, hybrid_vol_crisis_equity
 from stock_trader.risk_parity import risk_parity_equity
+from stock_trader.vaa import vaa_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
@@ -239,6 +242,39 @@ class BacktestEngine:
                 equity = composite_momentum_equity(
                     full_history, cached_history("SHY"), initial_cash
                 )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "vaa":
+                vaa_histories = {
+                    ticker: cached_history(ticker)
+                    for ticker in ("SPY", "EFA", "EEM", "IWM", "LQD", "IEF", "SHY")
+                }
+                equity = vaa_equity(vaa_histories, initial_cash)
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "aurum_momentum":
+                aurum_histories = {
+                    ticker: cached_history(ticker)
+                    for ticker in ("SPY", "QQQ", "EFA", "EEM", "TLT", "GLD", "SHY")
+                }
+                equity = aurum_momentum_equity(aurum_histories, initial_cash)
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "equity_rotation":
+                rotation_histories = {
+                    ticker: cached_history(ticker)
+                    for ticker in ("SPY", "QQQ", "VGT", "SHY")
+                }
+                equity = equity_rotation_equity(rotation_histories, initial_cash)
                 equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
                 curves[name] = equity
                 results[name] = _result_from_equity(symbol, name, equity, initial_cash)
