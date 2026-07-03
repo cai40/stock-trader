@@ -34,7 +34,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.8.4"
+APP_VERSION = "0.8.5"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -436,6 +436,42 @@ def fetch_crash_backtest(start: str, end: str) -> object:
     return run_crash_score_backtest(features, nasdaq)
 
 
+def _clear_crash_chart_zoom_state() -> None:
+    st.session_state.pop("crash_chart_xrange", None)
+    st.session_state.pop("crash_chart_zoom_saved_xrange", None)
+    st.session_state.pop("crash_chart_zoom_active", None)
+
+
+def _toggle_crash_chart_zoom(
+    action: str,
+    *,
+    full_start: pd.Timestamp,
+    full_end: pd.Timestamp,
+    factor: float | None = None,
+) -> None:
+    """Toggle zoom on the crash chart; click the same control again to retract."""
+    active = st.session_state.get("crash_chart_zoom_active")
+    if active == action:
+        st.session_state["crash_chart_xrange"] = st.session_state.pop(
+            "crash_chart_zoom_saved_xrange", None
+        )
+        st.session_state["crash_chart_zoom_active"] = None
+        return
+
+    if active is None:
+        st.session_state["crash_chart_zoom_saved_xrange"] = st.session_state.get("crash_chart_xrange")
+    base = st.session_state.get("crash_chart_zoom_saved_xrange")
+
+    if action == "reset":
+        st.session_state["crash_chart_xrange"] = None
+    else:
+        assert factor is not None
+        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
+            full_start, full_end, base, factor=factor
+        )
+    st.session_state["crash_chart_zoom_active"] = action
+
+
 def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
@@ -603,22 +639,29 @@ def tab_crash_warning() -> None:
     chart_range_key = f"{start_ts.date()}_{end_ts.date()}"
     if st.session_state.get("crash_chart_range_key") != chart_range_key:
         st.session_state["crash_chart_range_key"] = chart_range_key
-        st.session_state.pop("crash_chart_xrange", None)
+        _clear_crash_chart_zoom_state()
 
     full_start, full_end = crash_chart_data_range(nasdaq, score)
-    current_xrange: tuple[pd.Timestamp, pd.Timestamp] | None = st.session_state.get("crash_chart_xrange")
 
     z1, z2, z3 = st.columns(3)
-    if z1.button("Zoom in", key=f"crash_zoom_in_{APP_VERSION}", use_container_width=True):
-        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
-            full_start, full_end, current_xrange, factor=0.75
-        )
-    if z2.button("Zoom out", key=f"crash_zoom_out_{APP_VERSION}", use_container_width=True):
-        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
-            full_start, full_end, current_xrange, factor=1.33
-        )
-    if z3.button("Reset zoom", key=f"crash_zoom_reset_{APP_VERSION}", use_container_width=True):
-        st.session_state.pop("crash_chart_xrange", None)
+    if z1.button(
+        "Zoom in",
+        key=f"crash_zoom_in_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        _toggle_crash_chart_zoom("in", full_start=full_start, full_end=full_end, factor=0.75)
+    if z2.button(
+        "Zoom out",
+        key=f"crash_zoom_out_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        _toggle_crash_chart_zoom("out", full_start=full_start, full_end=full_end, factor=1.33)
+    if z3.button(
+        "Reset zoom",
+        key=f"crash_zoom_reset_{APP_VERSION}",
+        use_container_width=True,
+    ):
+        _toggle_crash_chart_zoom("reset", full_start=full_start, full_end=full_end)
 
     current_xrange = st.session_state.get("crash_chart_xrange")
     overlay = crash_warning_nasdaq_figure(nasdaq, score, events, x_range=current_xrange)
