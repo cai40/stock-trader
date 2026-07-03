@@ -34,7 +34,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.8.5"
+APP_VERSION = "0.8.6"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -128,16 +128,7 @@ def render_header() -> None:
 
 
 def render_strategy_guide_button() -> None:
-    if st.button(
-        "What do the strategies do?",
-        key=f"strategy_guide_btn_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        st.session_state["strategy_guide_open"] = not st.session_state.get(
-            "strategy_guide_open", False
-        )
-
-    if st.session_state.get("strategy_guide_open"):
+    if _info_toggle_button("What do the strategies do?", "strategy_guide_open"):
         with st.container(border=True):
             st.markdown("**Strategy guide** — one sentence each:")
             for name in COMPARE_OPTIONS:
@@ -149,6 +140,13 @@ def render_strategy_guide_button() -> None:
                 st.markdown(
                     f"- **{regime_name(regime)}** → {strategy_label(strategy)}"
                 )
+
+
+def _info_toggle_button(label: str, session_key: str) -> bool:
+    """Full-width toggle button; click again to hide the panel."""
+    if st.button(label, key=f"{session_key}_{APP_VERSION}", use_container_width=True):
+        st.session_state[session_key] = not st.session_state.get(session_key, False)
+    return bool(st.session_state.get(session_key, False))
 
 
 def pick_symbol(key_prefix: str, *, default_symbol: str = "VGT") -> str:
@@ -438,38 +436,6 @@ def fetch_crash_backtest(start: str, end: str) -> object:
 
 def _clear_crash_chart_zoom_state() -> None:
     st.session_state.pop("crash_chart_xrange", None)
-    st.session_state.pop("crash_chart_zoom_saved_xrange", None)
-    st.session_state.pop("crash_chart_zoom_active", None)
-
-
-def _toggle_crash_chart_zoom(
-    action: str,
-    *,
-    full_start: pd.Timestamp,
-    full_end: pd.Timestamp,
-    factor: float | None = None,
-) -> None:
-    """Toggle zoom on the crash chart; click the same control again to retract."""
-    active = st.session_state.get("crash_chart_zoom_active")
-    if active == action:
-        st.session_state["crash_chart_xrange"] = st.session_state.pop(
-            "crash_chart_zoom_saved_xrange", None
-        )
-        st.session_state["crash_chart_zoom_active"] = None
-        return
-
-    if active is None:
-        st.session_state["crash_chart_zoom_saved_xrange"] = st.session_state.get("crash_chart_xrange")
-    base = st.session_state.get("crash_chart_zoom_saved_xrange")
-
-    if action == "reset":
-        st.session_state["crash_chart_xrange"] = None
-    else:
-        assert factor is not None
-        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
-            full_start, full_end, base, factor=factor
-        )
-    st.session_state["crash_chart_zoom_active"] = action
 
 
 def tab_crash_warning() -> None:
@@ -479,48 +445,34 @@ def tab_crash_warning() -> None:
         "Suppressed during selloffs. Alerts at **≥80%** when credit/breadth patterns match."
     )
 
-    if st.button(
-        "How is the crash score calculated?",
-        key=f"crash_score_guide_btn_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        st.session_state["crash_score_guide_open"] = not st.session_state.get(
-            "crash_score_guide_open", False
-        )
-
-    if st.button(
-        "Explain score components (credit, small caps, yield curve…)",
-        key=f"crash_components_guide_btn_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        st.session_state["crash_components_guide_open"] = not st.session_state.get(
-            "crash_components_guide_open", False
-        )
-
-    if st.session_state.get("crash_score_guide_open"):
+    if _info_toggle_button("How is the crash score calculated?", "crash_score_guide_open"):
         with st.container(border=True):
             st.markdown(crash_score_guide_markdown())
 
-    if st.session_state.get("crash_components_guide_open"):
+    if _info_toggle_button(
+        "Explain score components (credit, small caps, yield curve…)",
+        "crash_components_guide_open",
+    ):
         with st.container(border=True):
             st.markdown(crash_components_guide_markdown())
 
-    with st.expander("What is VIX?"):
-        st.markdown(
-            """
-            **VIX** (CBOE Volatility Index) is often called the market **“fear gauge.”**
-            It measures how much **implied volatility** traders expect on the S&P 500 over the
-            next ~30 days, derived from options prices.
+    if _info_toggle_button("What is VIX?", "crash_vix_guide_open"):
+        with st.container(border=True):
+            st.markdown(
+                """
+                **VIX** (CBOE Volatility Index) is often called the market **“fear gauge.”**
+                It measures how much **implied volatility** traders expect on the S&P 500 over the
+                next ~30 days, derived from options prices.
 
-            - **Low VIX (≈12–18):** calm markets, investors complacent
-            - **High VIX (≈30+):** stress, hedging demand, often during selloffs
-            - **VIX z-score:** how unusual today’s VIX is vs the past year
+                - **Low VIX (≈12–18):** calm markets, investors complacent
+                - **High VIX (≈30+):** stress, hedging demand, often during selloffs
+                - **VIX z-score:** how unusual today’s VIX is vs the past year
 
-            Our crash dashboard uses VIX level, VIX z-score, and **VIX minus realized volatility**
-            (implied fear vs what actually happened). VIX often **spikes during** crashes; it is a
-            coincident stress indicator, not a perfect early-warning signal on its own.
-            """
-        )
+                Our crash dashboard uses VIX level, VIX z-score, and **VIX minus realized volatility**
+                (implied fear vs what actually happened). VIX often **spikes during** crashes; it is a
+                coincident stress indicator, not a perfect early-warning signal on its own.
+                """
+            )
 
     col1, col2 = st.columns(2)
     start = col1.date_input(
@@ -642,26 +594,19 @@ def tab_crash_warning() -> None:
         _clear_crash_chart_zoom_state()
 
     full_start, full_end = crash_chart_data_range(nasdaq, score)
+    current_xrange: tuple[pd.Timestamp, pd.Timestamp] | None = st.session_state.get("crash_chart_xrange")
 
     z1, z2, z3 = st.columns(3)
-    if z1.button(
-        "Zoom in",
-        key=f"crash_zoom_in_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        _toggle_crash_chart_zoom("in", full_start=full_start, full_end=full_end, factor=0.75)
-    if z2.button(
-        "Zoom out",
-        key=f"crash_zoom_out_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        _toggle_crash_chart_zoom("out", full_start=full_start, full_end=full_end, factor=1.33)
-    if z3.button(
-        "Reset zoom",
-        key=f"crash_zoom_reset_{APP_VERSION}",
-        use_container_width=True,
-    ):
-        _toggle_crash_chart_zoom("reset", full_start=full_start, full_end=full_end)
+    if z1.button("Zoom in", key=f"crash_zoom_in_{APP_VERSION}", use_container_width=True):
+        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
+            full_start, full_end, current_xrange, factor=0.75
+        )
+    if z2.button("Zoom out", key=f"crash_zoom_out_{APP_VERSION}", use_container_width=True):
+        st.session_state["crash_chart_xrange"] = crash_chart_zoom_range(
+            full_start, full_end, current_xrange, factor=1.33
+        )
+    if z3.button("Reset zoom", key=f"crash_zoom_reset_{APP_VERSION}", use_container_width=True):
+        _clear_crash_chart_zoom_state()
 
     current_xrange = st.session_state.get("crash_chart_xrange")
     overlay = crash_warning_nasdaq_figure(nasdaq, score, events, x_range=current_xrange)
@@ -680,25 +625,29 @@ def tab_crash_warning() -> None:
         st.caption("Historical crash episodes in selected range")
         st.dataframe(pd.DataFrame(event_rows), use_container_width=True, hide_index=True)
 
-    with st.expander("Backtest validation (leading, 12-month horizon)"):
-        st.caption(
-            "When leading probability ≥ 80% (and not in selloff), "
-            "what fraction saw a 15%+ NASDAQ drawdown within 12 months?"
-        )
-        try:
-            bt = fetch_crash_backtest(
-                st.session_state.get("crash_start", start.isoformat()),
-                st.session_state.get("crash_end", end.isoformat()),
+    if _info_toggle_button(
+        "Backtest validation (leading, 12-month horizon)",
+        "crash_backtest_open",
+    ):
+        with st.container(border=True):
+            st.caption(
+                "When leading probability ≥ 80% (and not in selloff), "
+                "what fraction saw a 15%+ NASDAQ drawdown within 12 months?"
             )
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("AUC 12mo", f"{bt.auc_12m:.2f}")
-            c2.metric("Actual @ ≥80%", f"{bt.crash_prob_at_alert:.0%}")
-            c3.metric("Precision", f"{bt.alert_precision_12m:.0%}")
-            edge = bt.crash_prob_at_alert - bt.crash_prob_baseline
-            c4.metric("Edge vs baseline", f"{edge:+.1%}")
-            st.markdown(backtest_summary_markdown(bt))
-        except ValueError as exc:
-            st.warning(str(exc))
+            try:
+                bt = fetch_crash_backtest(
+                    st.session_state.get("crash_start", start.isoformat()),
+                    st.session_state.get("crash_end", end.isoformat()),
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("AUC 12mo", f"{bt.auc_12m:.2f}")
+                c2.metric("Actual @ ≥80%", f"{bt.crash_prob_at_alert:.0%}")
+                c3.metric("Precision", f"{bt.alert_precision_12m:.0%}")
+                edge = bt.crash_prob_at_alert - bt.crash_prob_baseline
+                c4.metric("Edge vs baseline", f"{edge:+.1%}")
+                st.markdown(backtest_summary_markdown(bt))
+            except ValueError as exc:
+                st.warning(str(exc))
 
     if "vix" in features.columns and "vol_20d" in features.columns:
         vix_fig = go.Figure()
