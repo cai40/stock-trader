@@ -15,6 +15,11 @@ STRATEGY_COLORS: dict[str, str] = {
     "dual_momentum": "#c084fc",
     "vol_target": "#4ade80",
     "hybrid_regime": "#fbbf24",
+    "hybrid_vol_crisis": "#fde047",
+    "gem_dual_momentum": "#818cf8",
+    "faber_sma10": "#38bdf8",
+    "risk_parity": "#fb7185",
+    "composite_momentum": "#a3e635",
 }
 
 STRATEGY_LABELS: dict[str, str] = {
@@ -29,6 +34,11 @@ STRATEGY_LABELS: dict[str, str] = {
     "dual_momentum": "Dual Momentum (SPY vs SHY)",
     "vol_target": "Vol Target (15% target)",
     "hybrid_regime": "Hybrid Regime",
+    "hybrid_vol_crisis": "Hybrid Vol + Crisis",
+    "gem_dual_momentum": "GEM Dual Momentum",
+    "faber_sma10": "Faber 10-Month SMA",
+    "risk_parity": "Risk Parity (SPY/TLT/GLD/SHY)",
+    "composite_momentum": "Composite Momentum (6+12mo)",
 }
 
 STRATEGY_SUMMARIES: dict[str, str] = {
@@ -43,6 +53,11 @@ STRATEGY_SUMMARIES: dict[str, str] = {
     "absolute_momentum": "Holds the stock when its 12-month return is positive, otherwise stays in cash.",
     "trend_filter": "Holds only when price is above the 200-day moving average, exiting on a break below.",
     "hybrid_regime": "Detects the market regime each month and switches to the best-suited strategy for that environment.",
+    "hybrid_vol_crisis": "Uses vol targeting in normal markets and switches to dual momentum only during crisis regimes.",
+    "gem_dual_momentum": "Antonacci GEM: monthly rotation among SPY, EFA, and SHY using absolute and relative momentum.",
+    "faber_sma10": "Meb Faber rule: hold when price is above the 10-month moving average, otherwise stay in cash.",
+    "risk_parity": "Inverse-volatility weights across SPY, TLT, GLD, and SHY, rebalanced monthly.",
+    "composite_momentum": "Blends 6- and 12-month momentum; holds the stock when the composite score is positive, else SHY.",
 }
 
 PLOTLY_MOBILE_CONFIG = {

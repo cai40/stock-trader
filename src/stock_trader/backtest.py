@@ -6,7 +6,11 @@ import pandas as pd
 
 from stock_trader.benchmarks import buy_and_hold_equity, equity_metrics
 from stock_trader.dual_momentum import dual_momentum_equity
-from stock_trader.hybrid import hybrid_regime_equity
+from stock_trader.composite_momentum import composite_momentum_equity
+from stock_trader.faber import faber_sma10_equity
+from stock_trader.gem import gem_dual_momentum_equity
+from stock_trader.hybrid import hybrid_regime_equity, hybrid_vol_crisis_equity
+from stock_trader.risk_parity import risk_parity_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.market_data import MarketDataProvider
 from stock_trader.metrics import compute_max_drawdown, compute_win_rate
@@ -36,6 +40,23 @@ def _rebase_equity(equity: pd.Series, initial_cash: float) -> pd.Series:
     if start_value == 0:
         return equity
     return equity / start_value * initial_cash
+
+
+def _result_from_equity(
+    symbol: str,
+    strategy_name: str,
+    equity: pd.Series,
+    initial_cash: float,
+) -> BacktestResult:
+    end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
+    return BacktestResult(
+        symbol=symbol,
+        strategy_name=strategy_name,
+        start_cash=initial_cash,
+        end_equity=end_equity,
+        max_drawdown=compute_max_drawdown(equity.tolist()),
+        equity_curve=equity,
+    )
 
 
 class BacktestEngine:
@@ -124,7 +145,16 @@ class BacktestEngine:
         curves: dict[str, pd.Series] = {}
         results: dict[str, BacktestResult] = {}
 
-        safe_history: pd.DataFrame | None = None
+        history_cache: dict[str, pd.DataFrame] = {
+            symbol: full_history,
+        }
+
+        def cached_history(ticker: str) -> pd.DataFrame:
+            if ticker not in history_cache:
+                history_cache[ticker] = self.market_data.get_history(
+                    ticker, start=_warmup_start(start), end=end
+                )
+            return history_cache[ticker]
 
         for name in names:
             if name == "buy_and_hold":
@@ -142,58 +172,76 @@ class BacktestEngine:
                 continue
 
             if name == "dual_momentum":
-                if safe_history is None:
-                    safe_history = self.market_data.get_history(
-                        "SHY", start=_warmup_start(start), end=end
-                    )
-                equity = dual_momentum_equity(full_history, safe_history, initial_cash)
-                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
-                end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
-                curves[name] = equity
-                results[name] = BacktestResult(
-                    symbol=symbol,
-                    strategy_name="dual_momentum",
-                    start_cash=initial_cash,
-                    end_equity=end_equity,
-                    max_drawdown=compute_max_drawdown(equity.tolist()),
-                    equity_curve=equity,
+                equity = dual_momentum_equity(
+                    full_history, cached_history("SHY"), initial_cash
                 )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
                 continue
 
             if name == "vol_target":
                 equity = vol_target_equity(full_history, initial_cash)
                 equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
-                end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
                 curves[name] = equity
-                results[name] = BacktestResult(
-                    symbol=symbol,
-                    strategy_name="vol_target",
-                    start_cash=initial_cash,
-                    end_equity=end_equity,
-                    max_drawdown=compute_max_drawdown(equity.tolist()),
-                    equity_curve=equity,
-                )
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
                 continue
 
             if name == "hybrid_regime":
-                if safe_history is None:
-                    safe_history = self.market_data.get_history(
-                        "SHY", start=_warmup_start(start), end=end
-                    )
                 equity = hybrid_regime_equity(
-                    full_history, safe_history, initial_cash, symbol=symbol
+                    full_history, cached_history("SHY"), initial_cash, symbol=symbol
                 )
                 equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
-                end_equity = float(equity.iloc[-1]) if not equity.empty else initial_cash
                 curves[name] = equity
-                results[name] = BacktestResult(
-                    symbol=symbol,
-                    strategy_name="hybrid_regime",
-                    start_cash=initial_cash,
-                    end_equity=end_equity,
-                    max_drawdown=compute_max_drawdown(equity.tolist()),
-                    equity_curve=equity,
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "hybrid_vol_crisis":
+                equity = hybrid_vol_crisis_equity(
+                    full_history, cached_history("SHY"), initial_cash
                 )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "gem_dual_momentum":
+                equity = gem_dual_momentum_equity(
+                    cached_history("SPY"),
+                    cached_history("EFA"),
+                    cached_history("SHY"),
+                    initial_cash,
+                )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "faber_sma10":
+                equity = faber_sma10_equity(full_history, initial_cash)
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "risk_parity":
+                parity_histories = {
+                    ticker: cached_history(ticker)
+                    for ticker in ("SPY", "TLT", "GLD", "SHY")
+                }
+                equity = risk_parity_equity(parity_histories, initial_cash)
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
+                continue
+
+            if name == "composite_momentum":
+                equity = composite_momentum_equity(
+                    full_history, cached_history("SHY"), initial_cash
+                )
+                equity = _rebase_equity(equity.loc[equity.index >= start_ts], initial_cash)
+                curves[name] = equity
+                results[name] = _result_from_equity(symbol, name, equity, initial_cash)
                 continue
 
             result = self.run(

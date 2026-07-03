@@ -50,7 +50,7 @@ Tap **Deploy** → wait 3 minutes → open **your new** `https://YOUR-NAME.strea
 
 ### You should see
 
-- **v0.3.7** under the title
+- **v0.4.0** under the title
 - **📋 Pick a stock / ETF** dropdown
 - Tabs: Quote · Backtest · **Compare** · Paper trade
 

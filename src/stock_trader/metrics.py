@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import math
+
+import pandas as pd
+
 from stock_trader.models import OrderSide, Trade
 
 
@@ -44,3 +48,17 @@ def compute_win_rate(trades: list[Trade]) -> float:
     if round_trips == 0:
         return 0.0
     return wins / round_trips
+
+
+def compute_sharpe_ratio(equity: pd.Series, risk_free_rate: float = 0.0) -> float:
+    """Annualized Sharpe ratio from a daily equity curve."""
+    if equity.empty or len(equity) < 3:
+        return 0.0
+
+    returns = equity.astype(float).pct_change().dropna()
+    if returns.empty or returns.std() == 0:
+        return 0.0
+
+    daily_rf = risk_free_rate / 252
+    excess = returns - daily_rf
+    return float(excess.mean() / excess.std() * math.sqrt(252))

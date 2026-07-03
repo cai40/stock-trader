@@ -102,6 +102,14 @@ class BacktestResult:
     def trade_count(self) -> int:
         return len(self.trades)
 
+    @property
+    def sharpe_ratio(self) -> float:
+        from stock_trader.metrics import compute_sharpe_ratio
+
+        if self.equity_curve.empty:
+            return 0.0
+        return compute_sharpe_ratio(self.equity_curve)
+
 
 @dataclass
 class StrategyComparison:

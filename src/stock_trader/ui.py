@@ -18,12 +18,27 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.3.9"
+APP_VERSION = "0.4.0"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
 
-COMPARE_OPTIONS = ["buy_and_hold", "hybrid_regime", "vol_target", "dual_momentum", *list_strategies()]
+RESEARCH_STRATEGIES = [
+    "buy_and_hold",
+    "vol_target",
+    "hybrid_vol_crisis",
+    "gem_dual_momentum",
+    "faber_sma10",
+    "risk_parity",
+    "composite_momentum",
+    "dual_momentum",
+]
+
+COMPARE_OPTIONS = [
+    *RESEARCH_STRATEGIES,
+    "hybrid_regime",
+    *list_strategies(),
+]
 
 MARKET_DATA = YFinanceMarketData()
 ENGINE = BacktestEngine(MARKET_DATA)
@@ -319,9 +334,9 @@ def tab_backtest(symbol: str) -> None:
 def tab_compare(symbol: str) -> None:
     st.subheader("Compare strategies")
     st.caption(
-        "Use the range slider below the chart to change the visible period. "
-        "On long bull runs, **Vol Target** scales exposure up in calm markets and can beat buy-and-hold. "
-        "Trend/momentum strategies reduce drawdowns but often lag in straight rallies."
+        "Research-backed strategies are selected by default. "
+        "GEM and Risk Parity use multi-asset baskets (SPY/EFA/SHY and SPY/TLT/GLD/SHY). "
+        "Table is sorted by Sharpe ratio (risk-adjusted return)."
     )
 
     col1, col2 = st.columns(2)
@@ -332,7 +347,7 @@ def tab_compare(symbol: str) -> None:
     selected = st.multiselect(
         "Strategies to plot",
         options=COMPARE_OPTIONS,
-        default=COMPARE_OPTIONS,
+        default=RESEARCH_STRATEGIES,
         format_func=strategy_label,
         key=f"cmp_strategies_{APP_VERSION}",
     )
@@ -378,11 +393,14 @@ def tab_compare(symbol: str) -> None:
                     "Strategy": strategy_label(name),
                     "End equity": f"${result.end_equity:,.2f}",
                     "Return": f"{result.total_return * 100:.2f}%",
+                    "Sharpe": result.sharpe_ratio,
                     "Max drawdown": f"{result.max_drawdown * 100:.2f}%",
                     "Trades": result.trade_count,
                 }
             )
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        summary = pd.DataFrame(rows).sort_values("Sharpe", ascending=False)
+        summary["Sharpe"] = summary["Sharpe"].map(lambda value: f"{value:.2f}")
+        st.dataframe(summary, use_container_width=True, hide_index=True)
 
 
 def tab_paper_trade() -> None:

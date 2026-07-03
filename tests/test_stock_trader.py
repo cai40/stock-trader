@@ -12,7 +12,7 @@ from stock_trader.models import Order, OrderSide, Quote
 from stock_trader.portfolio import Portfolio
 from stock_trader.charts import strategy_label, strategy_summary
 from stock_trader.dual_momentum import dual_momentum_equity
-from stock_trader.hybrid import hybrid_regime_equity
+from stock_trader.hybrid import hybrid_regime_equity, hybrid_vol_crisis_equity
 from stock_trader.vol_target import vol_target_equity
 from stock_trader.strategies import (
     MovingAverageCrossoverStrategy,
@@ -244,6 +244,49 @@ def test_compare_strategies_includes_dual_momentum() -> None:
 
     assert "dual_momentum" in comparison.curves
     assert len(comparison.curves["dual_momentum"]) == len(history)
+
+
+def test_hybrid_vol_crisis_equity_curve() -> None:
+    dates = pd.date_range("2022-01-01", periods=300, freq="B")
+    risk = pd.DataFrame({"Close": [100 + i * 0.2 for i in range(300)]}, index=dates)
+    safe = pd.DataFrame({"Close": [80 + i * 0.01 for i in range(300)]}, index=dates)
+    equity = hybrid_vol_crisis_equity(risk, safe, initial_cash=10_000.0)
+    assert len(equity) == len(risk)
+    assert float(equity.iloc[-1]) > 0
+
+
+def test_compare_strategies_includes_gem_dual_momentum() -> None:
+    history = make_trending_history()
+    market_data: MarketDataProvider = FakeMarketData(
+        {
+            "TEST": history,
+            "SPY": history,
+            "EFA": history,
+            "SHY": pd.DataFrame({"Close": [50.0] * len(history)}, index=history.index),
+        }
+    )
+    engine = BacktestEngine(market_data)
+    comparison = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        initial_cash=10_000.0,
+        strategy_names=["buy_and_hold", "gem_dual_momentum"],
+    )
+    assert "gem_dual_momentum" in comparison.curves
+
+
+def test_backtest_result_exposes_sharpe_ratio() -> None:
+    history = make_trending_history()
+    market_data: MarketDataProvider = FakeMarketData({"TEST": history})
+    engine = BacktestEngine(market_data)
+    result = engine.compare_strategies(
+        "TEST",
+        start="2024-01-01",
+        end="2024-01-31",
+        strategy_names=["buy_and_hold"],
+    ).results["buy_and_hold"]
+    assert isinstance(result.sharpe_ratio, float)
 
 
 def test_backtest_returns_daily_equity_curve() -> None:

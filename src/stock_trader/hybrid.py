@@ -110,3 +110,65 @@ def hybrid_regime_equity(
         equities.append(equity)
 
     return pd.Series(equities, index=risk.index)
+
+
+def hybrid_vol_crisis_equity(
+    risk_history: pd.DataFrame,
+    safe_history: pd.DataFrame,
+    initial_cash: float,
+) -> pd.Series:
+    """Vol-target base with dual-momentum overlay during crisis regimes."""
+    risk = risk_history.copy()
+    safe = safe_history.copy()
+    risk.index = pd.to_datetime(risk.index)
+    safe.index = pd.to_datetime(safe.index)
+    idx = risk.index.intersection(safe.index)
+    risk = risk.loc[idx]
+    safe = safe.loc[idx]
+
+    if risk.empty:
+        return pd.Series(dtype=float)
+
+    risk_close = risk["Close"].astype(float)
+    safe_close = safe["Close"].astype(float)
+    risk_returns = risk_close.pct_change().fillna(0.0)
+    safe_returns = safe_close.pct_change().fillna(0.0)
+    risk_mom = risk_close / risk_close.shift(DUAL_LOOKBACK) - 1
+    safe_mom = safe_close / safe_close.shift(DUAL_LOOKBACK) - 1
+    vol_weights = _vol_weights(risk)
+
+    equity = initial_cash
+    equities: list[float] = []
+    regime: MarketRegime | None = None
+    last_month: pd.Period | None = None
+    dual_holds_risk = True
+
+    for i, (timestamp, _) in enumerate(risk.iterrows()):
+        hist = risk.iloc[: i + 1]
+        month = timestamp.to_period("M")
+        if last_month is None or month != last_month:
+            regime = detect_regime(hist)
+            last_month = month
+
+        assert regime is not None
+        day_risk_ret = float(risk_returns.iloc[i])
+        day_safe_ret = float(safe_returns.iloc[i])
+
+        if regime == MarketRegime.CRISIS:
+            rr = risk_mom.iloc[i]
+            sr = safe_mom.iloc[i]
+            if not pd.isna(rr) and not pd.isna(sr):
+                want_risk = bool(rr > sr)
+                if want_risk != dual_holds_risk:
+                    dual_holds_risk = want_risk
+            if dual_holds_risk:
+                equity *= 1.0 + day_risk_ret
+            else:
+                equity *= 1.0 + day_safe_ret
+        else:
+            weight = float(vol_weights.iloc[i])
+            equity *= 1.0 + weight * day_risk_ret
+
+        equities.append(equity)
+
+    return pd.Series(equities, index=risk.index)
