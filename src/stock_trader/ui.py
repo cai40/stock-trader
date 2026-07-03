@@ -8,11 +8,11 @@ import streamlit as st
 
 from stock_trader.backtest import BacktestEngine
 from stock_trader.crash_backtest import backtest_summary_markdown, run_crash_score_backtest
+from stock_trader.crash_probability import CRASH_ALERT_THRESHOLD, crash_probability_chart
 from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
     SignalTier,
-    composite_score_chart,
     crash_score_guide_markdown,
     crashes_in_range,
     load_crash_panel,
@@ -31,7 +31,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -436,9 +436,9 @@ def fetch_crash_backtest(start: str, end: str) -> object:
 def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
-        "Predictive NASDAQ crash score from leading macro, market, and NASDAQ-specific signals. "
-        "Lag indicators (drawdown, below SMA) are shown separately as live stress. "
-        "Score is quarterly with 2-quarter smoothing."
+        "6-month NASDAQ crash probability from historically calibrated signal patterns. "
+        "Alerts at **≥80%** only when proven multi-signal confluence matches. "
+        "Chart is quarterly with 2-quarter smoothing."
     )
 
     if st.button(
@@ -530,9 +530,20 @@ def tab_crash_warning() -> None:
     if assessment.fake_panic:
         st.warning(f"**Fake panic filter:** {assessment.fake_panic_reason}")
 
+    if assessment.high_confidence_alert:
+        st.error(
+            f"**High-confidence crash alert ({assessment.crash_probability:.0%})** — "
+            f"Pattern: *{assessment.probability_rule}*"
+        )
+
     m1, m2 = st.columns(2)
-    m1.metric("Predictive score", f"{assessment.composite_score:.1f}")
-    m2.metric("Predictive signals", f"{assessment.active_count}/9")
+    m1.metric(
+        "6-month crash probability",
+        f"{assessment.crash_probability:.0%}",
+        delta="≥80% alert" if assessment.high_confidence_alert else None,
+        delta_color="inverse" if assessment.high_confidence_alert else "off",
+    )
+    m2.metric("Pattern matched", assessment.probability_rule[:40] + ("…" if len(assessment.probability_rule) > 40 else ""))
     m3, m4 = st.columns(2)
     m3.metric(
         "Macro / market / NASDAQ",
@@ -542,7 +553,7 @@ def tab_crash_warning() -> None:
     m4.metric("Live stress", f"{assessment.stress_score:.0f}/4")
     m5, m6 = st.columns(2)
     m5.metric("VIX", f"{row.get('vix', float('nan')):.1f}" if pd.notna(row.get("vix")) else "—")
-    m6.metric("Coincident on", f"{assessment.coincident_count}/4")
+    m6.metric("Signal score (legacy)", f"{assessment.composite_score:.1f}")
 
     predictive_rows = []
     stress_rows = []
@@ -565,12 +576,13 @@ def tab_crash_warning() -> None:
 
     start_ts = pd.Timestamp(st.session_state.get("crash_start", start))
     end_ts = pd.Timestamp(st.session_state.get("crash_end", end))
-    score = composite_score_chart(features)
+    score = crash_probability_chart(features)
     nasdaq = nasdaq_normalized(panel, start_ts)
     events = crashes_in_range(start_ts, end_ts)
 
     overlay = crash_warning_nasdaq_figure(nasdaq, score, events)
     st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
+    st.caption(f"Red line = {CRASH_ALERT_THRESHOLD:.0%} high-confidence alert threshold")
 
     if events:
         event_rows = [
@@ -582,7 +594,7 @@ def tab_crash_warning() -> None:
 
     with st.expander("Backtest validation (NASDAQ 15%+ drawdowns)"):
         st.caption(
-            "Historical accuracy of the predictive score — does a high score precede NASDAQ crashes?"
+            "When probability ≥ 80%, what fraction actually saw a 15%+ NASDAQ drawdown within 6 months?"
         )
         try:
             bt = fetch_crash_backtest(
@@ -590,11 +602,11 @@ def tab_crash_warning() -> None:
                 st.session_state.get("crash_end", end.isoformat()),
             )
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("AUC 3mo", f"{bt.auc_3m:.2f}")
-            c2.metric("AUC 6mo", f"{bt.auc_6m:.2f}")
-            c3.metric("AUC 12mo", f"{bt.auc_12m:.2f}")
-            edge = bt.crash_prob_at_defensive - bt.crash_prob_baseline
-            c4.metric("Crash edge @ ≥6", f"{edge:+.1%}")
+            c1.metric("AUC 6mo", f"{bt.auc_6m:.2f}")
+            c2.metric("Actual rate @ ≥80%", f"{bt.crash_prob_at_alert:.0%}")
+            c3.metric("Precision @ ≥80%", f"{bt.alert_precision_6m:.0%}")
+            edge = bt.crash_prob_at_alert - bt.crash_prob_baseline
+            c4.metric("Edge vs baseline", f"{edge:+.1%}")
             st.markdown(backtest_summary_markdown(bt))
         except ValueError as exc:
             st.warning(str(exc))

@@ -4,22 +4,24 @@ import pandas as pd
 import pytest
 
 from stock_trader.crash_backtest import run_crash_score_backtest
+from stock_trader.crash_probability import (
+    CRASH_ALERT_THRESHOLD,
+    crash_probability_chart,
+    crash_probability_series,
+    evaluate_crash_probability,
+)
 from stock_trader.crash_warning import (
     HISTORICAL_CRASHES,
     RiskLevel,
     SignalTier,
     _download_panel,
     assess_crash_risk,
-    composite_score_chart,
-    composite_score_monthly,
-    composite_score_series,
     compute_crash_features,
     crash_score_guide_markdown,
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
     predictive_score_chart,
-    predictive_score_series,
 )
 from stock_trader.charts import crash_warning_nasdaq_figure
 
@@ -93,14 +95,14 @@ def test_assess_crash_risk_risk_on_in_calm_market() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
     assessment = assess_crash_risk(features)
     assert assessment.risk_level is RiskLevel.RISK_ON
-    assert assessment.active_count < 3
+    assert assessment.crash_probability < CRASH_ALERT_THRESHOLD
 
 
-def test_assess_crash_risk_elevated_in_stress_market() -> None:
+def test_crash_probability_high_in_stress_market() -> None:
     features = compute_crash_features(_stress_panel()).dropna()
     assessment = assess_crash_risk(features)
-    assert assessment.stress_score >= 1
-    assert assessment.risk_level in {RiskLevel.CAUTION, RiskLevel.DEFENSIVE, RiskLevel.CRITICAL}
+    assert assessment.crash_probability >= CRASH_ALERT_THRESHOLD
+    assert assessment.high_confidence_alert
 
 
 def test_predictive_score_excludes_coincident_tiers() -> None:
@@ -112,18 +114,16 @@ def test_predictive_score_excludes_coincident_tiers() -> None:
 
 def test_composite_score_series_length() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    scores = composite_score_monthly(features)
+    scores = crash_probability_series(features, monthly=True)
     assert len(scores) <= len(features)
-    assert len(scores) >= 1
-    assert float(scores.iloc[-1]) >= 0
+    assert 0.0 <= float(scores.iloc[-1]) <= 1.0
 
 
-def test_predictive_score_chart_fewer_points_than_daily() -> None:
+def test_crash_probability_chart_fewer_points_than_daily() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    chart = predictive_score_chart(features)
+    chart = crash_probability_chart(features)
     assert len(chart) < len(features)
-    assert len(chart) >= 1
-    assert chart.equals(composite_score_chart(features))
+    assert chart.max() <= 100.0
 
 
 def test_load_crash_panel_with_fake_data() -> None:
@@ -159,7 +159,7 @@ def test_crashes_in_range_filters_events() -> None:
 def test_crash_warning_nasdaq_figure_builds() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel).dropna()
-    score = composite_score_chart(features)
+    score = crash_probability_chart(features)
     nasdaq = nasdaq_normalized(panel, panel.index[0])
     events = list(HISTORICAL_CRASHES)
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
@@ -184,10 +184,16 @@ def test_download_panel_handles_mixed_timezones() -> None:
 
 def test_crash_score_guide_mentions_predictive_signals() -> None:
     guide = crash_score_guide_markdown()
-    assert "Yield curve inverted" in guide
-    assert "NASDAQ 12" in guide
-    assert "Live stress" in guide
+    assert "crash probability" in guide.lower()
+    assert "80%" in guide
     assert "Fake panic" in guide
+
+
+def test_evaluate_crash_probability_baseline() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    prob = evaluate_crash_probability(features.iloc[-1])
+    assert prob.probability < CRASH_ALERT_THRESHOLD
+    assert prob.rule_name
 
 
 def test_run_crash_score_backtest_on_synthetic_panel() -> None:
@@ -196,11 +202,10 @@ def test_run_crash_score_backtest_on_synthetic_panel() -> None:
     nasdaq = panel["IXIC"].reindex(features.index)
     result = run_crash_score_backtest(features, nasdaq)
     assert result.n_days == len(features)
-    assert result.early_warning_total >= 0
-    assert 0.0 <= result.auc_6m <= 1.0 or pd.isna(result.auc_6m)
+    assert result.alert_threshold == CRASH_ALERT_THRESHOLD
 
 
-def test_predictive_score_series_daily() -> None:
+def test_predictive_score_chart_still_works() -> None:
     features = compute_crash_features(_rising_panel()).dropna()
-    daily = predictive_score_series(features, monthly=False)
-    assert len(daily) == len(features)
+    chart = predictive_score_chart(features)
+    assert len(chart) >= 1

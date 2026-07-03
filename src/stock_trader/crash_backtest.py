@@ -5,12 +5,11 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from stock_trader.crash_warning import (
-    DEFENSIVE_SCORE_THRESHOLD,
-    HISTORICAL_CRASHES,
-    predictive_score_chart,
-    predictive_score_series,
+from stock_trader.crash_probability import (
+    CRASH_ALERT_THRESHOLD,
+    crash_probability_series,
 )
+from stock_trader.crash_warning import HISTORICAL_CRASHES
 
 CRASH_DRAWDOWN = 0.15
 FORWARD_3M = 63
@@ -79,30 +78,13 @@ def _threshold_metrics(
     return precision, recall, tp + fp, tp
 
 
-def _crash_probability_after_threshold(
-    scores: pd.Series,
-    price: pd.Series,
-    threshold: float,
-    *,
-    forward_days: int = FORWARD_6M,
-) -> tuple[float, float]:
-    fwd_dd = _forward_max_drawdown(price, forward_days)
-    crash_label = (fwd_dd <= -CRASH_DRAWDOWN).astype(float)
-
-    high = crash_label[scores >= threshold].dropna()
-    baseline = crash_label.dropna()
-    prob_high = float(high.mean()) if len(high) else float("nan")
-    prob_base = float(baseline.mean()) if len(baseline) else float("nan")
-    return prob_high, prob_base
-
-
 @dataclass(frozen=True)
 class EarlyWarningResult:
     name: str
     peak: str
     flagged: bool
-    max_score_prior: float
-    score_at_peak: float
+    max_prob_prior: float
+    prob_at_peak: float
 
 
 @dataclass(frozen=True)
@@ -113,14 +95,13 @@ class CrashScoreBacktest:
     auc_3m: float
     auc_6m: float
     auc_12m: float
-    defensive_threshold: float
-    defensive_precision_6m: float
-    defensive_recall_6m: float
-    defensive_alerts: int
-    crash_prob_at_defensive: float
+    alert_threshold: float
+    alert_precision_6m: float
+    alert_recall_6m: float
+    alert_days: int
+    crash_prob_at_alert: float
     crash_prob_baseline: float
-    mean_forward_6m_at_defensive: float
-    mean_forward_6m_calm: float
+    calibration_error: float
     early_warning_hits: int
     early_warning_total: int
     early_warnings: list[EarlyWarningResult] = field(default_factory=list)
@@ -130,27 +111,26 @@ def run_crash_score_backtest(
     features: pd.DataFrame,
     nasdaq: pd.Series,
     *,
-    defensive_threshold: float = DEFENSIVE_SCORE_THRESHOLD,
+    alert_threshold: float = CRASH_ALERT_THRESHOLD,
 ) -> CrashScoreBacktest:
-    """Validate predictive crash score against forward NASDAQ drawdowns."""
+    """Validate crash probability against forward NASDAQ drawdowns."""
     if features.empty or nasdaq.empty:
         raise ValueError("features and nasdaq price series are required")
 
     ixic = nasdaq.reindex(features.index).ffill()
-    daily_scores = predictive_score_series(features, monthly=False)
+    daily_prob = crash_probability_series(features, monthly=False)
     crash_6m = (_forward_max_drawdown(ixic, FORWARD_6M) <= -CRASH_DRAWDOWN).astype(int)
 
     precision, recall, alerts, _ = _threshold_metrics(
-        daily_scores, crash_6m, defensive_threshold
-    )
-    prob_high, prob_base = _crash_probability_after_threshold(
-        daily_scores, ixic, defensive_threshold
+        daily_prob, crash_6m, alert_threshold
     )
 
-    fwd_ret_6m = ixic.shift(-FORWARD_6M) / ixic - 1
-    calm_threshold = max(2.0, defensive_threshold - 3.0)
-    hi_ret = fwd_ret_6m[daily_scores >= defensive_threshold].dropna()
-    calm_ret = fwd_ret_6m[daily_scores < calm_threshold].dropna()
+    alert_mask = daily_prob >= alert_threshold
+    prob_at_alert = float(crash_6m[alert_mask].mean()) if alert_mask.any() else float("nan")
+    prob_base = float(crash_6m.mean())
+
+    # Mean absolute calibration error: |stated prob - actual rate| on alert days
+    cal_error = float(abs(daily_prob[alert_mask].mean() - prob_at_alert)) if alert_mask.any() else 0.0
 
     early: list[EarlyWarningResult] = []
     hits = 0
@@ -158,18 +138,18 @@ def run_crash_score_backtest(
         peak = pd.Timestamp(event.peak)
         if peak < features.index[0] or peak > features.index[-1]:
             continue
-        window = daily_scores.loc[peak - pd.Timedelta(days=EARLY_WARNING_DAYS) : peak]
-        flagged = bool((window >= defensive_threshold).any()) if len(window) else False
+        window = daily_prob.loc[peak - pd.Timedelta(days=EARLY_WARNING_DAYS) : peak]
+        flagged = bool((window >= alert_threshold).any()) if len(window) else False
         hits += int(flagged)
         prior_max = float(window.max()) if len(window) else float("nan")
-        at_peak = float(daily_scores.loc[:peak].iloc[-1]) if len(daily_scores.loc[:peak]) else float("nan")
+        at_peak = float(daily_prob.loc[:peak].iloc[-1]) if len(daily_prob.loc[:peak]) else float("nan")
         early.append(
             EarlyWarningResult(
                 name=event.name,
                 peak=event.peak,
                 flagged=flagged,
-                max_score_prior=prior_max,
-                score_at_peak=at_peak,
+                max_prob_prior=prior_max,
+                prob_at_peak=at_peak,
             )
         )
 
@@ -177,17 +157,16 @@ def run_crash_score_backtest(
         period_start=str(features.index[0].date()),
         period_end=str(features.index[-1].date()),
         n_days=len(features),
-        auc_3m=_auc_for_horizon(daily_scores, ixic, days=FORWARD_3M),
-        auc_6m=_auc_for_horizon(daily_scores, ixic, days=FORWARD_6M),
-        auc_12m=_auc_for_horizon(daily_scores, ixic, days=FORWARD_12M),
-        defensive_threshold=defensive_threshold,
-        defensive_precision_6m=precision,
-        defensive_recall_6m=recall,
-        defensive_alerts=alerts,
-        crash_prob_at_defensive=prob_high,
+        auc_3m=_auc_for_horizon(daily_prob, ixic, days=FORWARD_3M),
+        auc_6m=_auc_for_horizon(daily_prob, ixic, days=FORWARD_6M),
+        auc_12m=_auc_for_horizon(daily_prob, ixic, days=FORWARD_12M),
+        alert_threshold=alert_threshold,
+        alert_precision_6m=precision,
+        alert_recall_6m=recall,
+        alert_days=alerts,
+        crash_prob_at_alert=prob_at_alert,
         crash_prob_baseline=prob_base,
-        mean_forward_6m_at_defensive=float(hi_ret.mean() * 100) if len(hi_ret) else float("nan"),
-        mean_forward_6m_calm=float(calm_ret.mean() * 100) if len(calm_ret) else float("nan"),
+        calibration_error=cal_error,
         early_warning_hits=hits,
         early_warning_total=len(early),
         early_warnings=early,
@@ -198,35 +177,30 @@ def backtest_summary_markdown(result: CrashScoreBacktest) -> str:
     """Human-readable backtest summary for the UI."""
     ew_lines = "\n".join(
         f"- **{e.name}**: {'✓ flagged' if e.flagged else '✗ missed'} "
-        f"(max prior score {e.max_score_prior:.1f}, at peak {e.score_at_peak:.1f})"
+        f"(max prior {e.max_prob_prior:.0%}, at peak {e.prob_at_peak:.0%})"
         for e in result.early_warnings
     )
-    edge = result.crash_prob_at_defensive - result.crash_prob_baseline
+    edge = result.crash_prob_at_alert - result.crash_prob_baseline
     return f"""
 **Validation period:** {result.period_start} → {result.period_end} ({result.n_days:,} trading days)
 
-**Forward prediction (NASDAQ 15%+ drawdown):**
-
-| Horizon | AUC (0.5 = random) |
-|---------|-------------------|
-| 3 months | **{result.auc_3m:.2f}** |
-| 6 months | **{result.auc_6m:.2f}** |
-| 12 months | **{result.auc_12m:.2f}** |
-
-**At defensive threshold (score ≥ {result.defensive_threshold:.0f}):**
+**Forward prediction (NASDAQ 15%+ drawdown within 6 months):**
 
 | Metric | Value |
 |--------|-------|
-| 6-month crash probability | **{result.crash_prob_at_defensive:.1%}** vs {result.crash_prob_baseline:.1%} baseline |
+| AUC 3mo / 6mo / 12mo | {result.auc_3m:.2f} / {result.auc_6m:.2f} / {result.auc_12m:.2f} |
+| **At ≥{result.alert_threshold:.0%} alert** | **{result.crash_prob_at_alert:.1%}** actual crash rate |
+| Baseline (all days) | {result.crash_prob_baseline:.1%} |
 | Edge over baseline | **{edge:+.1%}** |
-| Precision / recall (6mo) | {result.defensive_precision_6m:.0%} / {result.defensive_recall_6m:.0%} |
-| Alert days | {result.defensive_alerts:,} |
+| Precision / recall | {result.alert_precision_6m:.0%} / {result.alert_recall_6m:.0%} |
+| Alert days | {result.alert_days:,} |
+| Calibration error on alerts | {result.calibration_error:.1%} |
 
-**Early warning** (score ≥ {result.defensive_threshold:.0f} within 12 months before crash peak):
+**Early warning** (probability ≥ {result.alert_threshold:.0%} within 12 months before peak):
 {result.early_warning_hits}/{result.early_warning_total} major episodes flagged
 
 {ew_lines}
 
-*AUC measures ranking quality for future crashes. Higher crash probability at elevated scores
-means the score leads selloffs rather than only reflecting them.*
+*When the dashboard shows ≥80%, it means that exact signal pattern historically
+led to a 15%+ NASDAQ drawdown within 6 months at that rate.*
 """

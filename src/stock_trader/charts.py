@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
-from stock_trader.crash_warning import CRITICAL_SCORE_THRESHOLD, DEFENSIVE_SCORE_THRESHOLD
+from stock_trader.crash_warning import CRASH_ALERT_THRESHOLD
 
 STRATEGY_COLORS: dict[str, str] = {
     "buy_and_hold": "#e2e8f0",
@@ -170,7 +170,7 @@ def crash_warning_nasdaq_figure(
         shared_xaxes=True,
         vertical_spacing=0.08,
         row_heights=[0.58, 0.42],
-        subplot_titles=("NASDAQ (start = 100)", "Predictive crash score (quarterly, smoothed)"),
+        subplot_titles=("NASDAQ (start = 100)", "6-month crash probability (quarterly)"),
     )
 
     for event in crashes:
@@ -208,17 +208,17 @@ def crash_warning_nasdaq_figure(
                 line=dict(color="#60a5fa", width=2.5, shape="spline"),
                 fill="tozeroy",
                 fillcolor="rgba(96,165,250,0.2)",
-                hovertemplate="%{x|%b %Y}<br>Score %{y:.1f}<extra></extra>",
+                hovertemplate="%{x|%b %Y}<br>%{y:.0f}%<extra></extra>",
                 showlegend=False,
             ),
             row=2,
             col=1,
         )
 
-    fig.add_hline(y=DEFENSIVE_SCORE_THRESHOLD, line_dash="dot", line_color="#fb923c", row=2, col=1)
-    fig.add_hline(y=CRITICAL_SCORE_THRESHOLD, line_dash="dot", line_color="#f87171", row=2, col=1)
+    alert_pct = CRASH_ALERT_THRESHOLD * 100.0
+    fig.add_hline(y=alert_pct, line_dash="dot", line_color="#f87171", row=2, col=1)
 
-    score_max = float(composite_score.max()) if not composite_score.empty else 15.0
+    prob_max = float(composite_score.max()) if not composite_score.empty else 100.0
 
     fig.update_layout(
         template="plotly_dark",
@@ -233,7 +233,7 @@ def crash_warning_nasdaq_figure(
     fig.update_yaxes(
         title_text="",
         fixedrange=True,
-        range=[0, max(15.0, score_max * 1.1)],
+        range=[0, max(100.0, prob_max * 1.05)],
         row=2,
         col=1,
     )
