@@ -51,6 +51,31 @@ src/stock_trader/
 - Tests use fake market data — no network calls in `tests/`
 - Keep changes minimal and focused; match existing style
 
+## Deployment (Render)
+
+**Render deploys from `main` only.** A commit on a feature branch (`cursor/...-51aa`) or an open PR does **not** update the live site. The user will not see changes on Render until they land on `main`.
+
+### Required workflow for UI / deploy-visible work
+
+When the task affects the Streamlit app or anything the user checks on Render:
+
+1. Implement and test on a feature branch (`cursor/<descriptive-name>-51aa`).
+2. Commit and push the branch; open or update a PR if useful for review.
+3. **Merge into `main` and push `origin main`** — this step is mandatory before marking the task done.
+4. Confirm `origin/main` contains the commit (e.g. `git log origin/main -1`).
+5. Tell the user to **Manual Deploy** on Render if auto-deploy did not run.
+
+Do **not** stop after pushing only a feature branch and report success. That leaves Render on the previous `main` commit.
+
+```bash
+git checkout main
+git pull origin main
+git merge cursor/<descriptive-name>-51aa
+git push origin main
+```
+
+Auto-deploy on Render is unreliable; always mention Manual Deploy when shipping UI changes.
+
 ## Roadmap
 
 Track progress here. Mark items `[x]` when done.
