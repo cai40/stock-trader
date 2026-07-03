@@ -202,6 +202,8 @@ def test_crash_warning_nasdaq_figure_respects_x_range() -> None:
     fig = crash_warning_nasdaq_figure(nasdaq, score, events, x_range=x_range)
     assert fig.layout.xaxis.range[0] == x_range[0]
     assert fig.layout.xaxis2.range[0] == x_range[0]
+    assert fig.layout.yaxis.fixedrange is True
+    assert fig.layout.yaxis2.fixedrange is True
 
 
 def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:

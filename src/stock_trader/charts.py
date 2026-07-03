@@ -90,7 +90,7 @@ CRASH_CHART_PLOTLY_CONFIG = {
     "scrollZoom": True,
     "displayModeBar": True,
     "displaylogo": False,
-    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    "modeBarButtonsToRemove": ["lasso2d", "select2d", "zoom2d"],
     "doubleClick": "reset",
 }
 
@@ -376,6 +376,15 @@ def crash_warning_nasdaq_figure(
     fig.add_hline(y=alert_pct, line_dash="dot", line_color="#f87171", row=2, col=1)
 
     prob_max = float(composite_score.max()) if not composite_score.empty else 100.0
+    prob_y_range = [0.0, max(100.0, prob_max * 1.05)]
+
+    if not nasdaq.empty:
+        nasdaq_lo = float(nasdaq.min())
+        nasdaq_hi = float(nasdaq.max())
+        pad = (nasdaq_hi - nasdaq_lo) * 0.05 or 5.0
+        nasdaq_y_range = [nasdaq_lo - pad, nasdaq_hi + pad]
+    else:
+        nasdaq_y_range = [90.0, 110.0]
 
     view_start = x_range[0] if x_range else x_min
     view_end = x_range[1] if x_range else x_max
@@ -404,11 +413,17 @@ def crash_warning_nasdaq_figure(
         row=2,
         col=1,
     )
-    fig.update_yaxes(title_text="", fixedrange=False, row=1, col=1)
     fig.update_yaxes(
         title_text="",
-        fixedrange=False,
-        range=[0, max(100.0, prob_max * 1.05)],
+        fixedrange=True,
+        range=nasdaq_y_range,
+        row=1,
+        col=1,
+    )
+    fig.update_yaxes(
+        title_text="",
+        fixedrange=True,
+        range=prob_y_range,
         row=2,
         col=1,
     )
