@@ -23,6 +23,7 @@ DEFAULT_CRASH_HISTORY_START = "1993-01-01"
 
 LOOKBACK_ZSCORE = 252
 VOL_WINDOW = 20
+SCORE_SMOOTH_WINDOW = 20
 MOMENTUM_LONG = 252
 MOMENTUM_SHORT = 21
 SMALLCAP_LAG_WINDOW = 63
@@ -355,23 +356,54 @@ def assess_crash_risk(features: pd.DataFrame) -> CrashAssessment:
     )
 
 
-def composite_score_series(features: pd.DataFrame) -> pd.Series:
-    """Historical composite warning score for charting."""
+def _score_from_row(row: pd.Series) -> float:
+    macro = market = coincident = 0
+    for rule in SIGNAL_RULES:
+        if not _signal_active(rule.key, row):
+            continue
+        if rule.tier is SignalTier.MACRO:
+            macro += 1
+        elif rule.tier is SignalTier.MARKET:
+            market += 1
+        else:
+            coincident += 1
+    return macro * 2.0 + market * 1.5 + coincident * 1.0
+
+
+def composite_score_series(
+    features: pd.DataFrame,
+    *,
+    monthly: bool = True,
+    smooth: int = SCORE_SMOOTH_WINDOW,
+) -> pd.Series:
+    """Historical composite warning score for charting.
+
+    Signals are re-evaluated on the first trading day of each month (matching
+    tactical-allocation research), then optionally smoothed with a rolling mean
+    so the chart is readable against long-run index moves.
+    """
+    if features.empty:
+        return pd.Series(dtype=float)
+
     scores: list[float] = []
+    last_month: pd.Period | None = None
+    month_score = 0.0
+
     for i in range(len(features)):
         row = features.iloc[i]
-        macro = market = coincident = 0
-        for rule in SIGNAL_RULES:
-            if not _signal_active(rule.key, row):
-                continue
-            if rule.tier is SignalTier.MACRO:
-                macro += 1
-            elif rule.tier is SignalTier.MARKET:
-                market += 1
-            else:
-                coincident += 1
-        scores.append(macro * 2.0 + market * 1.5 + coincident * 1.0)
-    return pd.Series(scores, index=features.index)
+        if monthly:
+            month = row.name.to_period("M")
+            if last_month is None or month != last_month:
+                month_score = _score_from_row(row)
+                last_month = month
+            scores.append(month_score)
+        else:
+            scores.append(_score_from_row(row))
+
+    series = pd.Series(scores, index=features.index)
+    if smooth > 1:
+        series = series.rolling(smooth, min_periods=1).mean()
+    return series
 
 
 def nasdaq_normalized(panel: pd.DataFrame, start: pd.Timestamp) -> pd.Series:

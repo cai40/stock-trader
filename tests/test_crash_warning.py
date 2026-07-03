@@ -100,6 +100,13 @@ def test_composite_score_series_length() -> None:
     assert float(scores.iloc[-1]) >= 0
 
 
+def test_composite_score_series_constant_within_month() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    scores = composite_score_series(features, monthly=True, smooth=1)
+    for _, group in scores.groupby(scores.index.to_period("M")):
+        assert group.nunique() <= 1
+
+
 def test_load_crash_panel_with_fake_data() -> None:
     panel = _rising_panel()
     _, features, assessment = load_crash_panel(

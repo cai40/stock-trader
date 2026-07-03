@@ -28,7 +28,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -421,9 +421,26 @@ def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
         "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
-        "Shaded bands mark major historical crashes. Default history spans 1993–present. "
-        "Educational research tool — not a trading signal."
+        "Score updates monthly (first trading day) with a 20-day rolling average for readability. "
+        "Shaded bands mark major historical crashes. Default history spans 1993–present."
     )
+
+    with st.expander("What is VIX?"):
+        st.markdown(
+            """
+            **VIX** (CBOE Volatility Index) is often called the market **“fear gauge.”**
+            It measures how much **implied volatility** traders expect on the S&P 500 over the
+            next ~30 days, derived from options prices.
+
+            - **Low VIX (≈12–18):** calm markets, investors complacent
+            - **High VIX (≈30+):** stress, hedging demand, often during selloffs
+            - **VIX z-score:** how unusual today’s VIX is vs the past year
+
+            Our crash dashboard uses VIX level, VIX z-score, and **VIX minus realized volatility**
+            (implied fear vs what actually happened). VIX often **spikes during** crashes; it is a
+            coincident stress indicator, not a perfect early-warning signal on its own.
+            """
+        )
 
     col1, col2 = st.columns(2)
     start = col1.date_input(
@@ -514,7 +531,7 @@ def tab_crash_warning() -> None:
         nasdaq,
         score,
         events,
-        title="NASDAQ Composite vs crash warning score (historical crashes marked)",
+        title="NASDAQ vs monthly crash score (20-day smoothed; crashes marked)",
     )
     st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
 
@@ -548,7 +565,7 @@ def tab_crash_warning() -> None:
         )
         vix_fig.update_layout(
             template="plotly_dark",
-            title="VIX vs 20-day realized volatility",
+            title="VIX (fear gauge) vs 20-day realized volatility",
             height=300,
             margin=dict(l=10, r=10, t=50, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
