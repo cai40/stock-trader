@@ -10,7 +10,7 @@ from stock_trader.backtest import BacktestEngine
 from stock_trader.crash_warning import (
     DEFAULT_CRASH_HISTORY_START,
     RISK_LABELS,
-    composite_score_monthly,
+    composite_score_chart,
     crashes_in_range,
     load_crash_panel,
     nasdaq_normalized,
@@ -28,7 +28,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.5.4"
+APP_VERSION = "0.5.5"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -91,6 +91,12 @@ PAGE_CSS = """
         border-radius: 10px;
         padding: 0.5rem 1rem;
         background: #1a1f2e;
+    }
+    @media (max-width: 768px) {
+        .block-container { max-width: 100% !important; padding-left: 0.5rem; padding-right: 0.5rem; }
+        .stTabs [data-baseweb="tab"] { font-size: 0.78rem; padding: 0.35rem 0.55rem; }
+        div[data-testid="stMetric"] label { font-size: 0.75rem; }
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-size: 1.1rem; }
     }
 </style>
 """
@@ -421,7 +427,7 @@ def tab_crash_warning() -> None:
     st.subheader("Crash early warning")
     st.caption(
         "Composite score from SPY, NASDAQ Composite (^IXIC), VIX, yield curve, and credit indicators. "
-        "Score updates once per month. Red shaded bands = historical crashes (see table below). "
+        "Score is quarterly with 2-quarter smoothing. Red bands = historical crashes (see table). "
     )
 
     with st.expander("What is VIX?"):
@@ -500,10 +506,11 @@ def tab_crash_warning() -> None:
     if assessment.fake_panic:
         st.warning(f"**Fake panic filter:** {assessment.fake_panic_reason}")
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2 = st.columns(2)
     m1.metric("Composite score", f"{assessment.composite_score:.1f}")
     m2.metric("Active signals", f"{assessment.active_count}/9")
-    m3.metric("Macro / market / coincident", f"{assessment.macro_count}/{assessment.market_count}/{assessment.coincident_count}")
+    m3, m4 = st.columns(2)
+    m3.metric("Macro / market / coinc.", f"{assessment.macro_count}/{assessment.market_count}/{assessment.coincident_count}")
     row = features.iloc[-1]
     m4.metric("VIX", f"{row.get('vix', float('nan')):.1f}" if pd.notna(row.get("vix")) else "—")
 
@@ -511,18 +518,16 @@ def tab_crash_warning() -> None:
     for status in assessment.signals:
         rows.append(
             {
-                "Tier": status.rule.tier.value.title(),
                 "Signal": status.rule.label,
-                "Active": "⚠️ Yes" if status.active else "—",
+                "On": "Yes" if status.active else "—",
                 "Value": status.display_value,
-                "Description": status.rule.description,
             }
         )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     start_ts = pd.Timestamp(st.session_state.get("crash_start", start))
     end_ts = pd.Timestamp(st.session_state.get("crash_end", end))
-    score = composite_score_monthly(features)
+    score = composite_score_chart(features)
     nasdaq = nasdaq_normalized(panel, start_ts)
     events = crashes_in_range(start_ts, end_ts)
 

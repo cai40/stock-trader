@@ -372,6 +372,21 @@ def _score_from_row(row: pd.Series) -> float:
     return macro * 2.0 + market * 1.5 + coincident * 1.0
 
 
+def composite_score_chart(features: pd.DataFrame) -> pd.Series:
+    """Quarterly crash score with 2-quarter smoothing — optimized for chart readability."""
+    if features.empty:
+        return pd.Series(dtype=float)
+
+    points: dict[pd.Timestamp, float] = {}
+    for _, group in features.groupby(features.index.to_period("Q")):
+        score = _score_from_row(group.iloc[0])
+        points[group.index[-1]] = score
+    series = pd.Series(points).sort_index()
+    if len(series) >= 2:
+        series = series.rolling(2, min_periods=1).mean()
+    return series
+
+
 def composite_score_monthly(features: pd.DataFrame) -> pd.Series:
     """One crash score per calendar month (last trading day) for chart display."""
     if features.empty:

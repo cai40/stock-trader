@@ -8,6 +8,7 @@ from stock_trader.crash_warning import (
     RiskLevel,
     _download_panel,
     assess_crash_risk,
+    composite_score_chart,
     composite_score_monthly,
     composite_score_series,
     compute_crash_features,
@@ -110,6 +111,13 @@ def test_composite_score_monthly_one_point_per_month() -> None:
     assert len(months) == len(months.unique())
 
 
+def test_composite_score_chart_fewer_points_than_daily() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    chart = composite_score_chart(features)
+    assert len(chart) < len(features)
+    assert len(chart) >= 1
+
+
 def test_load_crash_panel_with_fake_data() -> None:
     panel = _rising_panel()
     _, features, assessment = load_crash_panel(
@@ -143,7 +151,7 @@ def test_crashes_in_range_filters_events() -> None:
 def test_crash_warning_nasdaq_figure_builds() -> None:
     panel = _rising_panel()
     features = compute_crash_features(panel).dropna()
-    score = composite_score_monthly(features)
+    score = composite_score_chart(features)
     nasdaq = nasdaq_normalized(panel, panel.index[0])
     events = list(HISTORICAL_CRASHES)
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
