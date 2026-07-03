@@ -171,8 +171,8 @@ def test_crash_warning_nasdaq_figure_marks_crashes_on_both_panels() -> None:
     events = crashes_in_range(panel.index[0], panel.index[-1])
     fig = crash_warning_nasdaq_figure(nasdaq, score, events)
     assert len(fig.data) >= 2
-    crash_labels = [a.text for a in fig.layout.annotations if a.text in {"2018", "COVID", "2022", "GFC", "Dot-com", "2011"}]
-    assert len(crash_labels) == len(events) * 2
+    marker_traces = [t for t in fig.data if getattr(t, "mode", "") and "markers" in t.mode]
+    assert len(marker_traces) >= len(events) * 2
 
 
 class MixedTzMarketData:
@@ -215,6 +215,22 @@ def test_is_leading_eligible_false_in_drawdown() -> None:
     features = compute_crash_features(_stress_panel()).dropna()
     row = features.iloc[-1]
     assert not is_leading_eligible(row)
+
+
+def test_credit_available_column() -> None:
+    features = compute_crash_features(_rising_panel()).dropna()
+    assert "credit_available" in features.columns
+
+
+def test_chart_uses_smallcap_proxy_pre_credit() -> None:
+    from stock_trader.leading_crash import evaluate_leading_crash_probability_chart
+
+    panel = _stress_panel()
+    features = compute_crash_features(panel).dropna()
+    features["credit_available"] = False
+    row = features.iloc[-1]
+    chart_ev = evaluate_leading_crash_probability_chart(row)
+    assert "proxy" in chart_ev.rule_name
 
 
 def test_run_crash_score_backtest_on_synthetic_panel() -> None:

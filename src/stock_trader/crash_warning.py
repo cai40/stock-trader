@@ -315,6 +315,9 @@ def compute_crash_features(panel: pd.DataFrame) -> pd.DataFrame:
         feat["credit_stress"] = (
             panel["LQD"].pct_change(CREDIT_WINDOW) - panel["HYG"].pct_change(CREDIT_WINDOW)
         )
+        feat["credit_available"] = feat["credit_stress"].notna()
+    else:
+        feat["credit_available"] = False
 
     if "IWM" in panel:
         feat["smallcap_lag"] = panel["IWM"].pct_change(SMALLCAP_LAG_WINDOW) - spy.pct_change(
@@ -345,7 +348,10 @@ def _signal_active(key: str, row: pd.Series) -> bool:
         val = row.get("yc_deteriorating")
         return bool(pd.notna(val) and val < -0.75)
     if key == "credit_stress":
-        return bool(row.get("credit_stress", 0) > 0)
+        if not bool(row.get("credit_available", False)):
+            return False
+        val = row.get("credit_stress")
+        return bool(pd.notna(val) and val > 0)
     if key == "smallcap_lag":
         val = row.get("smallcap_lag")
         return bool(pd.notna(val) and val < -0.05)

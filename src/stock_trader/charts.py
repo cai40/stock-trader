@@ -183,6 +183,8 @@ def _add_crash_markers(
     *,
     x_min: pd.Timestamp,
     x_max: pd.Timestamp,
+    nasdaq: pd.Series,
+    score: pd.Series,
     rows: tuple[int, ...] = (1, 2),
 ) -> None:
     span = _crash_chart_span(event, x_min, x_max)
@@ -191,40 +193,64 @@ def _add_crash_markers(
     x0, x1, peak = span
     mid = x0 + (x1 - x0) / 2
     label = CRASH_LABEL_SHORT.get(event.name, event.name[:8])
+    peak_ts = pd.Timestamp(peak)
 
     for row in rows:
         fig.add_vrect(
             x0=x0,
             x1=x1,
-            fillcolor="rgba(248, 113, 113, 0.18)",
-            line_width=1,
-            line_color="rgba(248, 113, 113, 0.45)",
+            fillcolor="rgba(248, 113, 113, 0.28)",
+            line_width=1.5,
+            line_color="rgba(248, 113, 113, 0.65)",
             layer="below",
             row=row,
             col=1,
         )
         fig.add_vline(
-            x=peak,
-            line_width=1,
+            x=peak_ts,
+            line_width=1.5,
             line_dash="dot",
-            line_color="rgba(248, 113, 113, 0.7)",
+            line_color="#f87171",
             row=row,
             col=1,
         )
 
-    yref_top = {1: "y domain", 2: "y2 domain"}
-    for row in rows:
-        fig.add_annotation(
-            x=mid,
-            y=0.98,
-            xref="x",
-            yref=yref_top[row],
-            text=label,
-            showarrow=False,
-            yanchor="top",
-            font=dict(size=10, color="#fca5a5"),
-            bgcolor="rgba(26, 31, 46, 0.75)",
-            borderpad=2,
+    if not nasdaq.empty:
+        nasdaq_mid = float(nasdaq.asof(mid)) if pd.notna(nasdaq.asof(mid)) else float(nasdaq.iloc[-1])
+        nasdaq_peak = float(nasdaq.asof(peak_ts)) if pd.notna(nasdaq.asof(peak_ts)) else nasdaq_mid
+        fig.add_trace(
+            go.Scatter(
+                x=[mid, peak_ts],
+                y=[nasdaq_mid, nasdaq_peak],
+                mode="markers+text",
+                marker=dict(size=9, color="#f87171", symbol="diamond", line=dict(width=1, color="#fff")),
+                text=["", label],
+                textposition="top center",
+                textfont=dict(size=10, color="#fca5a5"),
+                hovertemplate=f"{event.name}<br>%{{x|%b %Y}}<extra></extra>",
+                showlegend=False,
+            ),
+            row=1,
+            col=1,
+        )
+
+    if not score.empty:
+        score_mid = float(score.asof(mid)) if pd.notna(score.asof(mid)) else float(score.iloc[-1])
+        score_peak = float(score.asof(peak_ts)) if pd.notna(score.asof(peak_ts)) else score_mid
+        fig.add_trace(
+            go.Scatter(
+                x=[mid, peak_ts],
+                y=[score_mid, score_peak],
+                mode="markers+text",
+                marker=dict(size=9, color="#f87171", symbol="circle", line=dict(width=1, color="#fff")),
+                text=[label, ""],
+                textposition="top center",
+                textfont=dict(size=10, color="#fca5a5"),
+                hovertemplate=f"{event.name}<br>%{{x|%b %Y}}<br>%{{y:.0f}}%<extra></extra>",
+                showlegend=False,
+            ),
+            row=2,
+            col=1,
         )
 
 
@@ -257,9 +283,6 @@ def crash_warning_nasdaq_figure(
         composite_score.index.max() if not composite_score.empty else pd.Timestamp.min,
     )
 
-    for event in crashes:
-        _add_crash_markers(fig, event, x_min=x_min, x_max=x_max, rows=(1, 2))
-
     if not nasdaq.empty:
         fig.add_trace(
             go.Scatter(
@@ -288,6 +311,17 @@ def crash_warning_nasdaq_figure(
             ),
             row=2,
             col=1,
+        )
+
+    for event in crashes:
+        _add_crash_markers(
+            fig,
+            event,
+            x_min=x_min,
+            x_max=x_max,
+            nasdaq=nasdaq,
+            score=composite_score,
+            rows=(1, 2),
         )
 
     alert_pct = CRASH_ALERT_THRESHOLD * 100.0

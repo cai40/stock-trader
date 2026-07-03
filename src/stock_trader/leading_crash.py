@@ -26,8 +26,68 @@ class LeadingRule:
 
 
 def _credit_worsening(row: pd.Series) -> bool:
+    if not bool(row.get("credit_available", False)):
+        return False
     val = row.get("credit_worsening")
     return bool(pd.notna(val) and val > 0.01)
+
+
+def _credit_available(row: pd.Series) -> bool:
+    return bool(row.get("credit_available", False))
+
+
+# Rules that do not require credit ETF data (used before ~2007).
+LEADING_RULES_NO_CREDIT: tuple[LeadingRule, ...] = (
+    LeadingRule(
+        "Small-cap weakness (breadth warning)",
+        0.883,
+        222,
+        lambda r: _smallcap_lag(r),
+    ),
+    LeadingRule(
+        "Yield curve inverted + small-cap weakness",
+        0.788,
+        52,
+        lambda r: _yc_inverted(r) and _smallcap_lag(r),
+    ),
+    LeadingRule(
+        "Yield curve inverted (macro)",
+        0.745,
+        271,
+        lambda r: _yc_inverted(r),
+    ),
+    LeadingRule(
+        "No leading pattern",
+        LEADING_BASELINE,
+        8164,
+        lambda r: True,
+    ),
+)
+
+
+def _rules_for_row(row: pd.Series) -> tuple[LeadingRule, ...]:
+    if _credit_available(row):
+        return LEADING_RULES
+    return LEADING_RULES_NO_CREDIT
+
+
+def _evaluate_rules(row: pd.Series, rules: tuple[LeadingRule, ...]) -> LeadingCrashAssessment:
+    for rule in rules:
+        if rule.check(row):
+            return LeadingCrashAssessment(
+                probability=rule.probability,
+                rule_name=rule.name,
+                sample_size=rule.sample_size,
+                leading_eligible=True,
+                high_confidence=rule.probability >= CRASH_ALERT_THRESHOLD,
+            )
+    return LeadingCrashAssessment(
+        probability=LEADING_BASELINE,
+        rule_name="No leading pattern",
+        sample_size=8164,
+        leading_eligible=True,
+        high_confidence=False,
+    )
 
 
 def _smallcap_lag(row: pd.Series) -> bool:
@@ -122,31 +182,51 @@ def is_leading_eligible(row: pd.Series) -> bool:
 
 def evaluate_leading_crash_probability(row: pd.Series) -> LeadingCrashAssessment:
     """12-month NASDAQ crash probability from leading indicators only."""
+    rules = _rules_for_row(row)
     if not is_leading_eligible(row):
+        suffix = " (small-cap/yield proxy)" if not _credit_available(row) else ""
         return LeadingCrashAssessment(
             probability=LEADING_BASELINE,
-            rule_name="Leading inactive (selloff underway)",
+            rule_name=f"Leading inactive (selloff underway){suffix}",
             sample_size=0,
             leading_eligible=False,
             high_confidence=False,
         )
 
-    for rule in LEADING_RULES:
-        if rule.check(row):
-            return LeadingCrashAssessment(
-                probability=rule.probability,
-                rule_name=rule.name,
-                sample_size=rule.sample_size,
-                leading_eligible=True,
-                high_confidence=rule.probability >= CRASH_ALERT_THRESHOLD,
-            )
+    assessment = _evaluate_rules(row, rules)
+    if not _credit_available(row) and assessment.rule_name != "No leading pattern":
+        assessment = LeadingCrashAssessment(
+            probability=assessment.probability,
+            rule_name=f"{assessment.rule_name} [no credit data]",
+            sample_size=assessment.sample_size,
+            leading_eligible=assessment.leading_eligible,
+            high_confidence=assessment.high_confidence,
+        )
+    return assessment
 
+
+def evaluate_leading_crash_probability_chart(row: pd.Series) -> LeadingCrashAssessment:
+    """Chart display: when credit ETFs unavailable, use small-cap/yield rules even in selloffs."""
+    rules = _rules_for_row(row)
+    if _credit_available(row):
+        if not is_leading_eligible(row):
+            return LeadingCrashAssessment(
+                probability=LEADING_BASELINE,
+                rule_name="Leading inactive (selloff underway)",
+                sample_size=0,
+                leading_eligible=False,
+                high_confidence=False,
+            )
+        return _evaluate_rules(row, rules)
+
+    # Pre-~2007: credit unavailable — chart uses small-cap / yield curve proxy.
+    assessment = _evaluate_rules(row, rules)
     return LeadingCrashAssessment(
-        probability=LEADING_BASELINE,
-        rule_name="No leading pattern",
-        sample_size=8164,
-        leading_eligible=True,
-        high_confidence=False,
+        probability=assessment.probability,
+        rule_name=f"{assessment.rule_name} [small-cap proxy]",
+        sample_size=assessment.sample_size,
+        leading_eligible=is_leading_eligible(row),
+        high_confidence=assessment.probability >= CRASH_ALERT_THRESHOLD and is_leading_eligible(row),
     )
 
 
@@ -184,7 +264,8 @@ def leading_crash_probability_chart(features: pd.DataFrame) -> pd.Series:
 
     points: dict[pd.Timestamp, float] = {}
     for _, group in features.groupby(features.index.to_period("Q")):
-        points[group.index[-1]] = leading_crash_probability_from_row(group.iloc[0])
+        row = group.iloc[0]
+        points[group.index[-1]] = evaluate_leading_crash_probability_chart(row).probability
     series = pd.Series(points).sort_index()
     if len(series) >= 2:
         series = series.rolling(2, min_periods=1).mean()
@@ -239,7 +320,8 @@ fires after a selloff is already underway.
 **Why it leads:** Credit markets often weaken **before** stocks. When lenders
 pull back from junk debt, equities can follow weeks or months later.
 
-**Data:** HYG and LQD ETFs (reliable from ~2007).
+**Data:** HYG and LQD ETFs (reliable from ~2007). Before that, the **chart uses
+small-cap and yield-curve signals only** as a proxy.
 
 ---
 

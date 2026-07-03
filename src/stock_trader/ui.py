@@ -31,7 +31,7 @@ from stock_trader.models import BacktestResult, OrderSide, PortfolioBacktestResu
 from stock_trader.strategies import get_strategy, list_strategies
 from stock_trader.watchlist import CUSTOM_OPTION, label_to_symbol, watchlist_labels, watchlist_select_options
 
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.8.2"
 
 DEFAULT_START = pd.Timestamp("2013-01-01")
 DEFAULT_END = pd.Timestamp("2026-06-01")
@@ -599,7 +599,11 @@ def tab_crash_warning() -> None:
 
     overlay = crash_warning_nasdaq_figure(nasdaq, score, events)
     st.plotly_chart(overlay, use_container_width=True, config=PLOTLY_MOBILE_CONFIG)
-    st.caption(f"Red line = {CRASH_ALERT_THRESHOLD:.0%} leading alert · shaded bands = historical crashes")
+    st.caption(
+        f"Red line = {CRASH_ALERT_THRESHOLD:.0%} leading alert · "
+        "Pre-2007 chart uses small-cap/yield proxy (no credit ETF data) · "
+        "Shaded bands = historical crashes"
+    )
 
     if events:
         event_rows = [
