@@ -76,6 +76,22 @@ git push origin main
 
 Auto-deploy on Render is unreliable; always mention Manual Deploy when shipping UI changes.
 
+### Agent cannot log into Render for you
+
+Render requires **your** GitHub login or a **Render API key**. Without one of these in the agent environment, the agent cannot create the service on your behalf.
+
+**Fastest permanent fix (one tap on your phone):**
+
+https://dashboard.render.com/blueprint/new?repo=https://github.com/cai40/stock-trader
+
+Sign in with GitHub **`cai40`** → **Apply** → use the `.onrender.com` URL (usually `https://stock-trader.onrender.com`).
+
+**Optional — fully automated future deploys:** add a Cursor project secret `RENDER_API_KEY` (from Render → Account Settings → API Keys). Then run:
+
+```bash
+bash scripts/deploy-render.sh
+```
+
 ## Roadmap
 
 Track progress here. Mark items `[x]` when done.
