@@ -92,3 +92,9 @@ Track progress here. Mark items `[x]` when done.
 
 - Never commit real credentials — this project needs none
 - `yfinance` calls external APIs at runtime; tests must not depend on them
+
+## Cursor Cloud specific instructions
+
+- Dependencies are installed automatically by the startup update script into `.venv` (the image already has the `python3.12-venv` module). Activate with `source .venv/bin/activate` before running any `stock-trader` / `python3 -m stock_trader.cli` / `streamlit` command.
+- Run the Streamlit UI bound to all interfaces so the cloud preview can reach it: `python3 -m streamlit run src/stock_trader/ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true`. Liveness probe: `GET /_stcore/health` returns `ok`.
+- Network egress works here, so `yfinance` live quotes and backtests succeed (verified). Tests use fake data and never hit the network.
